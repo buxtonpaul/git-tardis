@@ -146,6 +146,8 @@ Tree-sitter parsers are compiled for target languages with ABI compliance (`tree
 | Language | Extension | Node `kind()` Identifier Strings |
 | :--- | :--- | :--- |
 | **Rust** | `.rs` | `"function_item"`, `"closure_expression"` |
+| **C** | `.c`, `.h` | `"function_definition"` |
+| **C++** | `.cpp`, `.hpp`, `.cc`, `.cxx`, `.hh` | `"function_definition"`, `"template_declaration"` |
 | **Go** | `.go` | `"function_declaration"`, `"method_declaration"`, `"func_literal"` |
 | **Python** | `.py` | `"function_definition"`, `"lambda"` |
 | **TypeScript / JS** | `.ts`, `.js`, `.tsx`, `.jsx` | `"function_declaration"`, `"function_expression"`, `"arrow_function"`, `"method_definition"`, `"generator_function_declaration"`, `"generator_function"` |
