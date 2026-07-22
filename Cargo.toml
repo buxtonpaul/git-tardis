@@ -1,6 +1,19 @@
+[package]
+name = "git-tardis"
+version = "0.1.0"
+edition = "2021"
+authors = ["Paul Buxton"]
+description = "Time travelling git repository inspector & historical rebase tool"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
 [workspace]
 resolver = "2"
 members = [
+    ".",
     "research/interactive-rebase-poc",
     "research/keybindings-poc",
     "research/neovim-rpc-poc",
