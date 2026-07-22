@@ -282,3 +282,51 @@ fn test_timeline_navigator_direct_api() {
     assert_eq!(res.code_lines, vec!["v2"]);
     assert_eq!(res.commit_summary, "Commit 2");
 }
+
+#[test]
+fn test_code_viewer_focused_navigation_updates_commit_and_code() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(&repo, "main.rs", "fn main() { println!(\"v1\"); }\n", "Commit 1");
+    commit_file(&repo, "main.rs", "fn main() { println!(\"v2\"); }\n", "Commit 2");
+    commit_file(&repo, "main.rs", "fn main() { println!(\"v3\"); }\n", "Commit 3");
+
+    let history = repo.get_commit_history(None).unwrap();
+
+    let mut app = AppState::new(repo.work_dir().to_path_buf());
+    app.files = vec!["main.rs".to_string()];
+    app.commits = history
+        .into_iter()
+        .map(|c| (c.hash[..7.min(c.hash.len())].to_string(), c.summary))
+        .collect();
+    app.load_currently_selected_file();
+
+    // Toggle focus to CodeViewer
+    app.toggle_panel_focus();
+    assert_eq!(app.active_panel, git_tardis::app::ActivePanel::CodeViewer);
+
+    // Jump PREV from CodeViewer scope
+    app.dispatch_action(Action::JumpPrevFile);
+
+    // Check that CodeViewer content, selected_commit_hash, AND Tab 3 commit_selected are updated!
+    assert!(app.selected_commit_hash.is_some());
+    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v3\"); }"]);
+    assert_eq!(app.commit_selected, 0); // Index 0 in commits list is Commit 3
+    assert_eq!(app.modified_files.len(), 1);
+    assert!(app.modified_files[0].contains("main.rs"));
+
+    // Jump PREV again from CodeViewer scope
+    app.dispatch_action(Action::JumpPrevFile);
+    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v2\"); }"]);
+    assert_eq!(app.commit_selected, 1); // Index 1 in commits list is Commit 2
+
+    // Jump PREV again from CodeViewer scope
+    app.dispatch_action(Action::JumpPrevFile);
+    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v1\"); }"]);
+    assert_eq!(app.commit_selected, 2); // Index 2 in commits list is Commit 1
+
+    // Jump NEXT back towards HEAD
+    app.dispatch_action(Action::JumpNextFile);
+    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v2\"); }"]);
+    assert_eq!(app.commit_selected, 1);
+}

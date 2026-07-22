@@ -245,18 +245,42 @@ impl AppState {
         }
 
         let (hash, _) = self.commits[self.commit_selected].clone();
+        self.update_state_for_commit_hash(hash);
+    }
+
+    pub fn update_state_for_commit_hash(&mut self, hash: String) {
         self.selected_commit_hash = Some(hash.clone());
 
+        // Sync commit_selected index in self.commits if hash exists in commit history
+        if let Some(idx) = self.commits.iter().position(|(h, _)| {
+            h == &hash || hash.starts_with(h) || h.starts_with(&hash)
+        }) {
+            self.commit_selected = idx;
+        }
+
+        // Fetch modified files for this commit
         if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
             if let Ok(commit_files) = repo.get_commit_files(&hash) {
                 self.modified_files = commit_files
                     .into_iter()
                     .map(|s| format!("{} ({})", s.path, s.status_code().trim()))
                     .collect();
-                self.modified_selected = 0;
+
+                // If current file is in modified_files, set modified_selected to match it
+                if let Some(cur_file) = self.current_file_path() {
+                    if let Some(f_idx) = self.modified_files.iter().position(|item| {
+                        let clean = item.split_whitespace().next().unwrap_or(item);
+                        clean == cur_file
+                    }) {
+                        self.modified_selected = f_idx;
+                    } else {
+                        self.modified_selected = 0;
+                    }
+                } else {
+                    self.modified_selected = 0;
+                }
             }
         }
-        self.load_currently_selected_file();
     }
 
     pub fn reset_time_travel(&mut self) {
@@ -448,7 +472,7 @@ impl AppState {
             direction,
         ) {
             Ok(Some(result)) => {
-                self.selected_commit_hash = Some(result.commit_hash);
+                self.update_state_for_commit_hash(result.commit_hash);
                 self.code_lines = result.code_lines;
                 self.code_scroll_offset = 0;
                 if self.code_lines.is_empty() {
@@ -457,12 +481,10 @@ impl AppState {
                     self.cursor_line = self.cursor_line.clamp(1, self.code_lines.len());
                 }
                 self.status_message = result.status_message;
-                self.update_modified_files_for_selected_commit();
                 self.update_current_line_blame();
             }
             Ok(None) => {
-                self.selected_commit_hash = None;
-                self.load_currently_selected_file();
+                self.reset_time_travel();
                 self.status_message = format!(
                     "Returned to working directory / latest HEAD version of {}",
                     file_path
