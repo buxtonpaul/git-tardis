@@ -37,6 +37,12 @@ pub struct GrammarRegistry {
     extension_map: HashMap<String, String>, // ext -> language name
 }
 
+impl Default for GrammarRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GrammarRegistry {
     pub fn new() -> Self {
         let mut registry = Self {
@@ -49,7 +55,10 @@ impl GrammarRegistry {
             "rust",
             vec!["rs".to_string()],
             tree_sitter_rust::LANGUAGE.into(),
-            vec!["function_item".to_string(), "closure_expression".to_string()],
+            vec![
+                "function_item".to_string(),
+                "closure_expression".to_string(),
+            ],
             Some("(function_item) @function"),
         );
 
@@ -89,10 +98,11 @@ impl GrammarRegistry {
     }
 
     /// Load dynamic grammar from a shared library (.so / .dylib / .dll)
-    pub unsafe fn load_dynamic(
-        &mut self,
-        config: &LanguageConfig,
-    ) -> Result<(), String> {
+    ///
+    /// # Safety
+    /// The caller must ensure that `config.library_path` points to a valid shared library
+    /// adhering to the Tree-sitter C ABI.
+    pub unsafe fn load_dynamic(&mut self, config: &LanguageConfig) -> Result<(), String> {
         let lib_path = config
             .library_path
             .as_ref()
@@ -129,7 +139,10 @@ impl GrammarRegistry {
         let query = config.query.as_ref().and_then(|q_str| {
             Query::new(&language, q_str)
                 .map_err(|e| {
-                    eprintln!("Warning: Failed to compile custom query for {}: {}", config.name, e);
+                    eprintln!(
+                        "Warning: Failed to compile custom query for {}: {}",
+                        config.name, e
+                    );
                 })
                 .ok()
         });
@@ -173,7 +186,10 @@ impl GrammarRegistry {
                     .clone()
                     .unwrap_or_else(|| existing.node_kinds.clone());
 
-                let query_str = lang_cfg.query.clone().or_else(|| existing.query_str.clone());
+                let query_str = lang_cfg
+                    .query
+                    .clone()
+                    .or_else(|| existing.query_str.clone());
 
                 let query = if let Some(q_str) = &query_str {
                     Query::new(&existing.language, q_str).ok()
@@ -192,7 +208,8 @@ impl GrammarRegistry {
 
                 self.entries.insert(lang_cfg.name.clone(), entry);
                 for ext in &lang_cfg.extensions {
-                    self.extension_map.insert(ext.clone(), lang_cfg.name.clone());
+                    self.extension_map
+                        .insert(ext.clone(), lang_cfg.name.clone());
                 }
             }
         }
@@ -200,10 +217,7 @@ impl GrammarRegistry {
 }
 
 /// Test helper to detect enclosing function using AST node kinds
-pub fn find_enclosing_function_by_kind(
-    node: Node,
-    kinds: &[String],
-) -> Option<(usize, usize)> {
+pub fn find_enclosing_function_by_kind(node: Node, kinds: &[String]) -> Option<(usize, usize)> {
     let mut current = Some(node);
     while let Some(n) = current {
         if kinds.iter().any(|k| k == n.kind()) {
@@ -256,11 +270,14 @@ fn main() {
     // 2. Test Fallback Strategy for Unknown Extensions
     println!("\n--- 2. Fallback Mechanism for Unknown File Types ---");
     let (mode, entry) = resolve_navigation_mode("zig", &registry);
-    println!("Extension '.zig' resolved mode: {:?}", match mode {
-        NavigationMode::FunctionMode => "FunctionMode",
-        NavigationMode::LineMode => "LineMode",
-        NavigationMode::FileMode => "FileMode",
-    });
+    println!(
+        "Extension '.zig' resolved mode: {:?}",
+        match mode {
+            NavigationMode::FunctionMode => "FunctionMode",
+            NavigationMode::LineMode => "LineMode",
+            NavigationMode::FileMode => "FileMode",
+        }
+    );
     assert!(entry.is_none());
 
     // 3. Test TOML Config Override & User Extension Mapping
@@ -335,7 +352,11 @@ mod tests {
 
         let entry = registry.get_by_extension("pyi").expect("Registered pyi");
         assert_eq!(entry.name, "python");
-        assert!(entry.node_kinds.contains(&"async_function_definition".to_string()));
+        assert!(
+            entry
+                .node_kinds
+                .contains(&"async_function_definition".to_string())
+        );
     }
 
     #[test]
@@ -346,4 +367,3 @@ mod tests {
         assert!(entry.is_none());
     }
 }
-

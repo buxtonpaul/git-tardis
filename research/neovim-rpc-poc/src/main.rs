@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use nvim_rs::{compat::tokio::Compat, create::tokio as create, Handler, Neovim};
+use nvim_rs::{Handler, Neovim, compat::tokio::Compat, create::tokio as create};
 use rmpv::Value;
 use std::env;
 use std::error::Error;
@@ -32,7 +32,12 @@ impl FileLogger {
 
     fn log(&self, msg: &str) {
         if let Ok(mut f) = self.file.lock() {
-            let _ = writeln!(f, "[{}] {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), msg);
+            let _ = writeln!(
+                f,
+                "[{}] {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                msg
+            );
             let _ = f.flush();
         }
     }
@@ -48,13 +53,11 @@ struct NeovimHandler {
 impl Handler for NeovimHandler {
     type Writer = Writer;
 
-    async fn handle_notify(
-        &self,
-        name: String,
-        args: Vec<Value>,
-        _neovim: Neovim<Self::Writer>,
-    ) {
-        self.logger.log(&format!("Received RPC notification: {} with args: {:?}", name, args));
+    async fn handle_notify(&self, name: String, args: Vec<Value>, _neovim: Neovim<Self::Writer>) {
+        self.logger.log(&format!(
+            "Received RPC notification: {} with args: {:?}",
+            name, args
+        ));
         let _ = self.tx.send(name);
     }
 
@@ -64,7 +67,10 @@ impl Handler for NeovimHandler {
         args: Vec<Value>,
         _neovim: Neovim<Self::Writer>,
     ) -> Result<Value, Value> {
-        self.logger.log(&format!("Received RPC request: {} with args: {:?}", name, args));
+        self.logger.log(&format!(
+            "Received RPC request: {} with args: {:?}",
+            name, args
+        ));
         Ok(Value::Nil)
     }
 }
@@ -84,14 +90,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    logger.log(&format!("Connecting to host Neovim at socket: {}", socket_path));
+    logger.log(&format!(
+        "Connecting to host Neovim at socket: {}",
+        socket_path
+    ));
 
     // 2. Setup RPC connection
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let handler = NeovimHandler { tx, logger: logger.clone() };
-    
+    let handler = NeovimHandler {
+        tx,
+        logger: logger.clone(),
+    };
+
     let (neovim, io_handler) = create::new_path(&socket_path, handler).await?;
-    
+
     // Spawn the IO loop in the background
     let logger_clone = logger.clone();
     let io_join = tokio::spawn(async move {
@@ -107,16 +119,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let channel_id = api_info[0]
         .as_i64()
         .ok_or("Failed to parse channel ID from get_api_info")?;
-    
+
     logger.log(&format!("Connected! RPC channel ID is: {}", channel_id));
 
     // 4. Create a scratch buffer
     let buf = neovim.create_buf(false, true).await?;
     logger.log(&format!("Created scratch buffer: {:?}", buf.get_value()));
-    
+
     // Set bufhidden to wipe so that the buffer is automatically wiped out when the window is closed
-    buf.set_option("bufhidden", Value::from("wipe"))
-        .await?;
+    buf.set_option("bufhidden", Value::from("wipe")).await?;
     logger.log("Set bufhidden to wipe");
 
     // Set some contents in the buffer
@@ -148,10 +159,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // 6. Set up autocommand on BufWipeout for this specific buffer
     let opts = vec![
         (Value::from("buffer"), buf.get_value().clone()),
-        (Value::from("command"), Value::from(format!("call rpcnotify({}, 'float_closed')", channel_id))),
+        (
+            Value::from("command"),
+            Value::from(format!("call rpcnotify({}, 'float_closed')", channel_id)),
+        ),
         (Value::from("once"), Value::from(true)),
     ];
-    neovim.create_autocmd(Value::from("BufWipeout"), opts).await?;
+    neovim
+        .create_autocmd(Value::from("BufWipeout"), opts)
+        .await?;
     logger.log("Registered BufWipeout autocommand");
 
     logger.log("Waiting for 'float_closed' notification from Neovim...");

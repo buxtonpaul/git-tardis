@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+    "research/interactive-rebase-poc",
+    "research/keybindings-poc",
+    "research/neovim-rpc-poc",
+    "research/ratatui-layout-poc",
+    "research/tree-sitter-extensibility-poc",
+    "research/tree-sitter-poc",
+]
+exclude = [
+    "research/syntax-highlighting-poc",
+]
