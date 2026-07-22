@@ -2,12 +2,15 @@ use tree_sitter::{Language, Parser, Point};
 
 /// Returns the language definition based on file path extension
 fn get_language_for_file(path: &str) -> Option<(Language, &'static str)> {
-    let extension = path.split('.').last()?;
+    let extension = path.split('.').next_back()?;
     match extension {
         "rs" => Some((tree_sitter_rust::LANGUAGE.into(), "rust")),
         "go" => Some((tree_sitter_go::LANGUAGE.into(), "go")),
         "py" => Some((tree_sitter_python::LANGUAGE.into(), "python")),
-        "ts" | "js" => Some((tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), "typescript")),
+        "ts" | "js" => Some((
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            "typescript",
+        )),
         "tsx" | "jsx" => Some((tree_sitter_typescript::LANGUAGE_TSX.into(), "tsx")),
         _ => None,
     }
@@ -18,7 +21,10 @@ fn is_function_node(kind: &str, lang: &str) -> bool {
     match lang {
         "rust" => matches!(kind, "function_item" | "closure_expression"),
         "python" => matches!(kind, "function_definition" | "lambda"),
-        "go" => matches!(kind, "function_declaration" | "method_declaration" | "func_literal"),
+        "go" => matches!(
+            kind,
+            "function_declaration" | "method_declaration" | "func_literal"
+        ),
         "typescript" | "tsx" | "javascript" => matches!(
             kind,
             "function_declaration"
@@ -67,8 +73,14 @@ pub fn find_enclosing_function_range(
     }
     let line = lines[row_index];
     let first_non_ws = line.find(|c: char| !c.is_whitespace()).unwrap_or(0);
-    let start_point = Point { row: row_index, column: first_non_ws };
-    let end_point = Point { row: row_index, column: line.len() };
+    let start_point = Point {
+        row: row_index,
+        column: first_non_ws,
+    };
+    let end_point = Point {
+        row: row_index,
+        column: line.len(),
+    };
 
     // 4a. Walk UP from the first non-whitespace character on the line
     let mut node = root_node.descendant_for_point_range(start_point, start_point);
@@ -113,7 +125,11 @@ fn run_test_case(
         query_line,
         expected,
         result,
-        if result == expected { "\u{2705} PASS" } else { "\u{274C} FAIL" }
+        if result == expected {
+            "\u{2705} PASS"
+        } else {
+            "\u{274C} FAIL"
+        }
     );
     assert_eq!(result, expected);
 }
@@ -136,7 +152,7 @@ fn main() {
 "#;
     run_test_case("test.rs", rust_code, 1, Some((1, 4))); // on Rust fn signature
     run_test_case("test.rs", rust_code, 2, Some((1, 4))); // inside add
-    run_test_case("test.rs", rust_code, 6, None);          // outside fn (struct)
+    run_test_case("test.rs", rust_code, 6, None); // outside fn (struct)
     run_test_case("test.rs", rust_code, 9, Some((8, 11))); // inside main
 
     // Test 2: Python
@@ -151,10 +167,10 @@ class Math:
 
 print("Top level code")
 "#;
-    run_test_case("test.py", python_code, 1, Some((1, 4)));  // signature of calculate_sum
-    run_test_case("test.py", python_code, 3, Some((1, 4)));  // body of calculate_sum
-    run_test_case("test.py", python_code, 7, Some((7, 8)));  // inside method multiply
-    run_test_case("test.py", python_code, 10, None);         // top level print
+    run_test_case("test.py", python_code, 1, Some((1, 4))); // signature of calculate_sum
+    run_test_case("test.py", python_code, 3, Some((1, 4))); // body of calculate_sum
+    run_test_case("test.py", python_code, 7, Some((7, 8))); // inside method multiply
+    run_test_case("test.py", python_code, 10, None); // top level print
 
     // Test 3: Go
     let go_code = r#"package main
@@ -172,10 +188,10 @@ func (m *MyType) Solve(input string) error {
     return nil
 }
 "#;
-    run_test_case("test.go", go_code, 5, Some((5, 7)));    // helper signature
-    run_test_case("test.go", go_code, 6, Some((5, 7)));    // helper body
-    run_test_case("test.go", go_code, 9, Some((9, 14)));   // method declaration Solve
-    run_test_case("test.go", go_code, 11, Some((9, 14)));  // deep inside method Solve
+    run_test_case("test.go", go_code, 5, Some((5, 7))); // helper signature
+    run_test_case("test.go", go_code, 6, Some((5, 7))); // helper body
+    run_test_case("test.go", go_code, 9, Some((9, 14))); // method declaration Solve
+    run_test_case("test.go", go_code, 11, Some((9, 14))); // deep inside method Solve
 
     // Test 4: TypeScript / TSX
     let ts_code = r#"const arrowFunc = (x: number) => {
@@ -195,8 +211,8 @@ class User {
     }
 }
 "#;
-    run_test_case("test.ts", ts_code, 1, Some((1, 3)));    // arrow function
-    run_test_case("test.ts", ts_code, 8, Some((8, 10)));   // constructor
+    run_test_case("test.ts", ts_code, 1, Some((1, 3))); // arrow function
+    run_test_case("test.ts", ts_code, 8, Some((8, 10))); // constructor
     run_test_case("test.ts", ts_code, 12, Some((12, 15))); // getName method signature
     run_test_case("test.ts", ts_code, 13, Some((12, 15))); // getName method body
 

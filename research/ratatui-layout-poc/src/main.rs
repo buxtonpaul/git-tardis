@@ -1,15 +1,15 @@
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
+    event::{self, Event, KeyCode, KeyEventKind},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Tabs},
-    Frame, Terminal,
 };
 use std::io::stdout;
 
@@ -90,6 +90,12 @@ pub struct AppState {
     pub running: bool,
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AppState {
     pub fn new() -> Self {
         Self {
@@ -148,7 +154,11 @@ impl AppState {
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.running = false;
             }
-            KeyCode::Tab | KeyCode::Char('h') | KeyCode::Char('l') | KeyCode::Left | KeyCode::Right => {
+            KeyCode::Tab
+            | KeyCode::Char('h')
+            | KeyCode::Char('l')
+            | KeyCode::Left
+            | KeyCode::Right => {
                 self.active_panel = match self.active_panel {
                     ActivePanel::Sidebar => ActivePanel::CodeViewer,
                     ActivePanel::CodeViewer => ActivePanel::Sidebar,
@@ -169,60 +179,57 @@ impl AppState {
             }
             KeyCode::Char('m') => {
                 self.nav_mode = self.nav_mode.cycle();
-                self.status_message = format!("Navigation Mode changed to: {}", self.nav_mode.name());
+                self.status_message =
+                    format!("Navigation Mode changed to: {}", self.nav_mode.name());
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                match self.active_panel {
-                    ActivePanel::Sidebar => match self.sidebar_view {
-                        SidebarView::FileExplorer => {
-                            if self.file_selected + 1 < self.files.len() {
-                                self.file_selected += 1;
-                            }
-                        }
-                        SidebarView::ModifiedFiles => {
-                            if self.modified_selected + 1 < self.modified_files.len() {
-                                self.modified_selected += 1;
-                            }
-                        }
-                        SidebarView::CommitTimeline => {
-                            if self.commit_selected + 1 < self.commits.len() {
-                                self.commit_selected += 1;
-                            }
-                        }
-                    },
-                    ActivePanel::CodeViewer => {
-                        if self.cursor_line < self.code_lines.len() {
-                            self.cursor_line += 1;
+            KeyCode::Char('j') | KeyCode::Down => match self.active_panel {
+                ActivePanel::Sidebar => match self.sidebar_view {
+                    SidebarView::FileExplorer => {
+                        if self.file_selected + 1 < self.files.len() {
+                            self.file_selected += 1;
                         }
                     }
-                }
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                match self.active_panel {
-                    ActivePanel::Sidebar => match self.sidebar_view {
-                        SidebarView::FileExplorer => {
-                            if self.file_selected > 0 {
-                                self.file_selected -= 1;
-                            }
-                        }
-                        SidebarView::ModifiedFiles => {
-                            if self.modified_selected > 0 {
-                                self.modified_selected -= 1;
-                            }
-                        }
-                        SidebarView::CommitTimeline => {
-                            if self.commit_selected > 0 {
-                                self.commit_selected -= 1;
-                            }
-                        }
-                    },
-                    ActivePanel::CodeViewer => {
-                        if self.cursor_line > 1 {
-                            self.cursor_line -= 1;
+                    SidebarView::ModifiedFiles => {
+                        if self.modified_selected + 1 < self.modified_files.len() {
+                            self.modified_selected += 1;
                         }
                     }
+                    SidebarView::CommitTimeline => {
+                        if self.commit_selected + 1 < self.commits.len() {
+                            self.commit_selected += 1;
+                        }
+                    }
+                },
+                ActivePanel::CodeViewer => {
+                    if self.cursor_line < self.code_lines.len() {
+                        self.cursor_line += 1;
+                    }
                 }
-            }
+            },
+            KeyCode::Char('k') | KeyCode::Up => match self.active_panel {
+                ActivePanel::Sidebar => match self.sidebar_view {
+                    SidebarView::FileExplorer => {
+                        if self.file_selected > 0 {
+                            self.file_selected -= 1;
+                        }
+                    }
+                    SidebarView::ModifiedFiles => {
+                        if self.modified_selected > 0 {
+                            self.modified_selected -= 1;
+                        }
+                    }
+                    SidebarView::CommitTimeline => {
+                        if self.commit_selected > 0 {
+                            self.commit_selected -= 1;
+                        }
+                    }
+                },
+                ActivePanel::CodeViewer => {
+                    if self.cursor_line > 1 {
+                        self.cursor_line -= 1;
+                    }
+                }
+            },
             KeyCode::Char('n') | KeyCode::Char(']') => {
                 self.status_message = format!(
                     "Jumping NEXT in [{}] for line {}",
@@ -253,7 +260,9 @@ fn ui(frame: &mut Frame, state: &AppState) {
         .split(frame.area());
 
     // 1. Top Bar / Title
-    let header_block = Block::default().borders(Borders::ALL).title(" Git-tardis TUI ");
+    let header_block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Git-tardis TUI ");
     let sidebar_titles = vec![
         SidebarView::FileExplorer.name(),
         SidebarView::ModifiedFiles.name(),
@@ -267,7 +276,11 @@ fn ui(frame: &mut Frame, state: &AppState) {
     let tabs = Tabs::new(sidebar_titles)
         .block(header_block)
         .select(selected_tab)
-        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+        .highlight_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
     frame.render_widget(tabs, chunks[0]);
 
     // 2. Middle Main Area: Horizontal Split
@@ -281,7 +294,11 @@ fn ui(frame: &mut Frame, state: &AppState) {
 
     // Left Sidebar rendering
     let is_sidebar_active = state.active_panel == ActivePanel::Sidebar;
-    let sidebar_border_color = if is_sidebar_active { Color::Cyan } else { Color::DarkGray };
+    let sidebar_border_color = if is_sidebar_active {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
     let sidebar_block = Block::default()
         .borders(Borders::ALL)
         .title(format!(" Sidebar [{}] ", state.sidebar_view.name()))
@@ -350,7 +367,11 @@ fn ui(frame: &mut Frame, state: &AppState) {
 
     // Right Code Viewer rendering
     let is_code_active = state.active_panel == ActivePanel::CodeViewer;
-    let code_border_color = if is_code_active { Color::Cyan } else { Color::DarkGray };
+    let code_border_color = if is_code_active {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
     let code_block = Block::default()
         .borders(Borders::ALL)
         .title(format!(" Code Viewer - Mode: [{}] ", state.nav_mode.name()))
@@ -362,7 +383,10 @@ fn ui(frame: &mut Frame, state: &AppState) {
         let is_cursor = line_num == state.cursor_line;
         let prefix = if is_cursor { "> " } else { "  " };
         let line_style = if is_cursor && is_code_active {
-            Style::default().bg(Color::DarkGray).fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default()
+                .bg(Color::DarkGray)
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
         } else if is_cursor {
             Style::default().fg(Color::Yellow)
         } else {
@@ -398,12 +422,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     while state.running {
         terminal.draw(|f| ui(f, &state))?;
 
-        if event::poll(std::time::Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    state.handle_key(key.code);
-                }
-            }
+        if event::poll(std::time::Duration::from_millis(50))?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
+            state.handle_key(key.code);
         }
     }
 

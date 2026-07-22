@@ -1,14 +1,12 @@
+use crossterm::{
+    cursor::{Hide, Show},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
 use std::env;
 use std::fs;
 use std::io;
 use std::process::{Command, ExitStatus};
-use crossterm::{
-    cursor::{Hide, Show},
-    execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-    },
-};
 use tempfile::TempDir;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -58,13 +56,12 @@ fn handle_sequence_editor_mark_edit(
     let mut matched = false;
 
     for line in content.lines() {
-        if line.starts_with("pick ") {
+        if let Some(rest) = line.strip_prefix("pick ") {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
                 let commit_hash = parts[1];
                 if commit_hash.starts_with(target_hash) || target_hash.starts_with(commit_hash) {
                     // Replace 'pick' with 'edit'
-                    let rest = &line[5..]; // after "pick "
                     modified.push_str("edit ");
                     modified.push_str(rest);
                     modified.push('\n');
@@ -95,10 +92,7 @@ fn handle_sequence_editor_mark_edit(
 
 /// Run git command inside working directory
 fn run_git(dir: &std::path::Path, args: &[&str]) -> io::Result<ExitStatus> {
-    Command::new("git")
-        .current_dir(dir)
-        .args(args)
-        .status()
+    Command::new("git").current_dir(dir).args(args).status()
 }
 
 /// Run git command with custom environment variables
@@ -117,10 +111,7 @@ fn run_git_env(
 
 /// Capture stdout of git command
 fn git_output(dir: &std::path::Path, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
-    let output = Command::new("git")
-        .current_dir(dir)
-        .args(args)
-        .output()?;
+    let output = Command::new("git").current_dir(dir).args(args).output()?;
     if !output.status.success() {
         return Err(format!(
             "git command failed: {:?}\nstderr: {}",
@@ -164,7 +155,10 @@ fn test_inline_rewrite(_exe_path: &str) -> Result<(), Box<dyn std::error::Error>
     println!("  B (Target): {}", &hash_b[..7]);
 
     // Perform inline edit targeting Commit B
-    fs::write(repo_path.join("file_b.txt"), "Line 1 in B (REWRITTEN INLINE)\nLine 2 in B\n")?;
+    fs::write(
+        repo_path.join("file_b.txt"),
+        "Line 1 in B (REWRITTEN INLINE)\nLine 2 in B\n",
+    )?;
     run_git(repo_path, &["add", "file_b.txt"])?;
 
     // Create fixup commit for B
@@ -185,11 +179,7 @@ fn test_inline_rewrite(_exe_path: &str) -> Result<(), Box<dyn std::error::Error>
         rebase_args.push(&upstream);
     }
 
-    let status = run_git_env(
-        repo_path,
-        &rebase_args,
-        &[("GIT_SEQUENCE_EDITOR", "true")],
-    )?;
+    let status = run_git_env(repo_path, &rebase_args, &[("GIT_SEQUENCE_EDITOR", "true")])?;
 
     if !status.success() {
         return Err("Rebase failed unexpectedly during inline rewrite test".into());
@@ -210,10 +200,13 @@ fn test_inline_rewrite(_exe_path: &str) -> Result<(), Box<dyn std::error::Error>
 }
 
 /// Determine target upstream for rebase (either commit~1 or --root if commit is root)
-fn get_rebase_upstream(dir: &std::path::Path, commit: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn get_rebase_upstream(
+    dir: &std::path::Path,
+    commit: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let parent_check = Command::new("git")
         .current_dir(dir)
-        .args(&["rev-parse", "--verify", "--quiet", &format!("{}~1", commit)])
+        .args(["rev-parse", "--verify", "--quiet", &format!("{}~1", commit)])
         .output()?;
     if parent_check.status.success() {
         Ok(format!("{}~1", commit))
@@ -237,12 +230,18 @@ fn test_inline_rewrite_conflict() -> Result<(), Box<dyn std::error::Error>> {
     let hash_a = git_output(repo_path, &["rev-parse", "HEAD"])?;
 
     // Commit B: Modify conflict.txt
-    fs::write(repo_path.join("conflict.txt"), "Line 1 modified by B\nLine 2\n")?;
+    fs::write(
+        repo_path.join("conflict.txt"),
+        "Line 1 modified by B\nLine 2\n",
+    )?;
     run_git(repo_path, &["add", "conflict.txt"])?;
     run_git(repo_path, &["commit", "-m", "Commit B: Modify Line 1"])?;
 
     // Fixup targeting A that changes Line 1 to something conflicting with B
-    fs::write(repo_path.join("conflict.txt"), "Line 1 modified by Fixup\nLine 2\n")?;
+    fs::write(
+        repo_path.join("conflict.txt"),
+        "Line 1 modified by Fixup\nLine 2\n",
+    )?;
     run_git(repo_path, &["add", "conflict.txt"])?;
     run_git(repo_path, &["commit", &format!("--fixup={}", hash_a)])?;
 
@@ -256,23 +255,25 @@ fn test_inline_rewrite_conflict() -> Result<(), Box<dyn std::error::Error>> {
         rebase_args.push(&upstream);
     }
 
-    let status = run_git_env(
-        repo_path,
-        &rebase_args,
-        &[("GIT_SEQUENCE_EDITOR", "true")],
-    )?;
+    let status = run_git_env(repo_path, &rebase_args, &[("GIT_SEQUENCE_EDITOR", "true")])?;
 
     assert!(!status.success(), "Rebase should fail due to conflict");
     println!("Rebase exited with non-zero status as expected!");
 
     // Check if rebase in progress
     let rebase_merge_dir = repo_path.join(".git").join("rebase-merge");
-    assert!(rebase_merge_dir.exists(), ".git/rebase-merge directory should exist during conflict");
+    assert!(
+        rebase_merge_dir.exists(),
+        ".git/rebase-merge directory should exist during conflict"
+    );
     println!("Detected active rebase-merge state in .git!");
 
     // Cleanly abort rebase
     run_git(repo_path, &["rebase", "--abort"])?;
-    assert!(!rebase_merge_dir.exists(), ".git/rebase-merge directory should be removed after abort");
+    assert!(
+        !rebase_merge_dir.exists(),
+        ".git/rebase-merge directory should be removed after abort"
+    );
     println!("Successfully aborted conflicting rebase!");
 
     Ok(())
@@ -357,7 +358,10 @@ fn test_edit_here(exe_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         // In a real TUI application, at this point we spawn an interactive subshell
         // or user's $SHELL or allow editing.
         println!("Simulating user editing files at commit B...");
-        fs::write(repo_path.join("file_b.txt"), "B modified during 'edit here'\n")?;
+        fs::write(
+            repo_path.join("file_b.txt"),
+            "B modified during 'edit here'\n",
+        )?;
         run_git(repo_path, &["add", "file_b.txt"])?;
 
         // Amend commit or run git rebase --continue

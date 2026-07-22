@@ -28,7 +28,9 @@ impl KeyStroke {
                     strokes.push(KeyStroke::Esc);
                 } else if s_rest.eq_ignore_ascii_case("<tab>") {
                     strokes.push(KeyStroke::Tab);
-                } else if s_rest.eq_ignore_ascii_case("<cr>") || s_rest.eq_ignore_ascii_case("<enter>") {
+                } else if s_rest.eq_ignore_ascii_case("<cr>")
+                    || s_rest.eq_ignore_ascii_case("<enter>")
+                {
                     strokes.push(KeyStroke::Enter);
                 } else if s_rest.eq_ignore_ascii_case("<up>") {
                     strokes.push(KeyStroke::Up);
@@ -67,20 +69,20 @@ pub enum Action {
     ToggleFocus,
     SetSidebarView(usize), // 1, 2, 3
     CycleNavMode,
-    
+
     MoveUp,
     MoveDown,
     Select,
 
     // Timeline navigation actions
-    JumpNextAuto,       // Default active mode jump
-    JumpPrevAuto,       // Default active mode jump
-    JumpNextFile,       // Force file mode jump
-    JumpPrevFile,       // Force file mode jump
-    JumpNextFunction,   // Force function mode jump
-    JumpPrevFunction,   // Force function mode jump
-    JumpNextLine,       // Force line mode jump
-    JumpPrevLine,       // Force line mode jump
+    JumpNextAuto,     // Default active mode jump
+    JumpPrevAuto,     // Default active mode jump
+    JumpNextFile,     // Force file mode jump
+    JumpPrevFile,     // Force file mode jump
+    JumpNextFunction, // Force function mode jump
+    JumpPrevFunction, // Force function mode jump
+    JumpNextLine,     // Force line mode jump
+    JumpPrevLine,     // Force line mode jump
 
     InlineRewrite,
     EditHere,
@@ -138,11 +140,11 @@ impl KeymapRegistry {
         self.bind(Scope::CodeViewer, "k", Action::MoveUp);
         self.bind(Scope::CodeViewer, "<Down>", Action::MoveDown);
         self.bind(Scope::CodeViewer, "<Up>", Action::MoveUp);
-        
+
         // Mode-specific timeline navigation shortcuts
         self.bind(Scope::CodeViewer, "]", Action::JumpNextAuto);
         self.bind(Scope::CodeViewer, "[", Action::JumpPrevAuto);
-        
+
         self.bind(Scope::CodeViewer, "]m", Action::JumpNextFile);
         self.bind(Scope::CodeViewer, "[m", Action::JumpPrevFile);
 
@@ -187,9 +189,9 @@ impl KeymapRegistry {
         let target_seq = KeySequence(pending.to_vec());
         let full_match = map.get(&target_seq);
 
-        let is_prefix = map.keys().any(|seq| {
-            seq.0.starts_with(pending) && seq.0.len() > pending.len()
-        });
+        let is_prefix = map
+            .keys()
+            .any(|seq| seq.0.starts_with(pending) && seq.0.len() > pending.len());
 
         if let Some(action) = full_match {
             if is_prefix {
@@ -206,8 +208,8 @@ impl KeymapRegistry {
 
     /// Load configuration overrides from TOML string
     pub fn apply_toml_config(&mut self, toml_str: &str) -> Result<(), String> {
-        let cfg: KeymapConfig = toml::from_str(toml_str)
-            .map_err(|e| format!("Failed to parse keymap TOML: {}", e))?;
+        let cfg: KeymapConfig =
+            toml::from_str(toml_str).map_err(|e| format!("Failed to parse keymap TOML: {}", e))?;
 
         if let Some(global) = cfg.global {
             self.apply_scope_config(Scope::Global, global);
@@ -223,7 +225,10 @@ impl KeymapRegistry {
     }
 
     fn apply_scope_config(&mut self, scope: Scope, mappings: ScopeKeymapConfig) {
-        let bind_list = |registry: &mut KeymapRegistry, scope: Scope, keys: Option<KeyBindingConfig>, action: Action| {
+        let bind_list = |registry: &mut KeymapRegistry,
+                         scope: Scope,
+                         keys: Option<KeyBindingConfig>,
+                         action: Action| {
             if let Some(cfg) = keys {
                 for key_str in cfg.into_vec() {
                     registry.bind(scope, &key_str, action.clone());
@@ -241,8 +246,18 @@ impl KeymapRegistry {
         bind_list(self, scope, mappings.jump_prev, Action::JumpPrevAuto);
         bind_list(self, scope, mappings.jump_next_file, Action::JumpNextFile);
         bind_list(self, scope, mappings.jump_prev_file, Action::JumpPrevFile);
-        bind_list(self, scope, mappings.jump_next_function, Action::JumpNextFunction);
-        bind_list(self, scope, mappings.jump_prev_function, Action::JumpPrevFunction);
+        bind_list(
+            self,
+            scope,
+            mappings.jump_next_function,
+            Action::JumpNextFunction,
+        );
+        bind_list(
+            self,
+            scope,
+            mappings.jump_prev_function,
+            Action::JumpPrevFunction,
+        );
         bind_list(self, scope, mappings.jump_next_line, Action::JumpNextLine);
         bind_list(self, scope, mappings.jump_prev_line, Action::JumpPrevLine);
         bind_list(self, scope, mappings.inline_rewrite, Action::InlineRewrite);
@@ -320,7 +335,7 @@ fn main() {
     // 2. Test Scope Hierarchy (Sidebar vs CodeViewer vs Global)
     println!("\n--- 2. Scope Hierarchy Resolution ---");
     let enter_key = vec![KeyStroke::Enter];
-    
+
     // In Sidebar scope, Enter -> Action::Select
     let res_sb = registry.resolve(Scope::Sidebar, &enter_key);
     println!("'<CR>' in Sidebar -> {:?}", res_sb);
@@ -375,15 +390,24 @@ mod tests {
         assert_eq!(res, MatchResult::FullMatch(Action::MoveDown));
 
         // Multi-stroke jump function in code viewer
-        let res = registry.resolve(Scope::CodeViewer, &[KeyStroke::Char(']'), KeyStroke::Char('f')]);
+        let res = registry.resolve(
+            Scope::CodeViewer,
+            &[KeyStroke::Char(']'), KeyStroke::Char('f')],
+        );
         assert_eq!(res, MatchResult::FullMatch(Action::JumpNextFunction));
 
         // Multi-stroke jump line in code viewer
-        let res = registry.resolve(Scope::CodeViewer, &[KeyStroke::Char(']'), KeyStroke::Char('l')]);
+        let res = registry.resolve(
+            Scope::CodeViewer,
+            &[KeyStroke::Char(']'), KeyStroke::Char('l')],
+        );
         assert_eq!(res, MatchResult::FullMatch(Action::JumpNextLine));
 
         // Multi-stroke jump file in code viewer
-        let res = registry.resolve(Scope::CodeViewer, &[KeyStroke::Char(']'), KeyStroke::Char('m')]);
+        let res = registry.resolve(
+            Scope::CodeViewer,
+            &[KeyStroke::Char(']'), KeyStroke::Char('m')],
+        );
         assert_eq!(res, MatchResult::FullMatch(Action::JumpNextFile));
     }
 
@@ -403,7 +427,10 @@ mod tests {
         let res_quit = registry.resolve(Scope::Global, &[KeyStroke::Ctrl('q')]);
         assert_eq!(res_quit, MatchResult::FullMatch(Action::Quit));
 
-        let res_func = registry.resolve(Scope::CodeViewer, &[KeyStroke::Char(']'), KeyStroke::Char('F')]);
+        let res_func = registry.resolve(
+            Scope::CodeViewer,
+            &[KeyStroke::Char(']'), KeyStroke::Char('F')],
+        );
         assert_eq!(res_func, MatchResult::FullMatch(Action::JumpNextFunction));
     }
 }
