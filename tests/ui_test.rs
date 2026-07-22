@@ -159,3 +159,27 @@ fn test_toml_custom_keymap_config_loading() {
     let act_ctrl_f = dispatcher.handle_key(KeyStroke::Ctrl('f'), Scope::CodeViewer);
     assert_eq!(act_ctrl_f, Some(Action::JumpNextFunction));
 }
+
+#[test]
+fn test_sidebar_file_selection_loads_content() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file1_path = temp_dir.path().join("file1.rs");
+    std::fs::write(&file1_path, "println!(\"File 1 content\");\n").unwrap();
+
+    let mut app = AppState::new(temp_dir.path().to_path_buf());
+    app.files = vec!["file1.rs".to_string()];
+
+    let registry = KeymapRegistry::new();
+    let mut dispatcher = KeyDispatcher::new(registry);
+
+    // Press 'l' or Enter in Sidebar scope
+    let act = dispatcher.handle_key(KeyStroke::Char('l'), app.active_scope());
+    assert_eq!(act, Some(Action::Select));
+
+    if let Some(a) = act {
+        app.dispatch_action(a);
+    }
+
+    assert_eq!(app.code_lines, vec!["println!(\"File 1 content\");"]);
+    assert!(app.status_message.contains("Loaded file: file1.rs"));
+}

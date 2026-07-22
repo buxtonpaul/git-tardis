@@ -175,6 +175,7 @@ impl KeymapRegistry {
         self.bind(Scope::Sidebar, "<Down>", Action::MoveDown);
         self.bind(Scope::Sidebar, "<Up>", Action::MoveUp);
         self.bind(Scope::Sidebar, "<CR>", Action::Select);
+        self.bind(Scope::Sidebar, "l", Action::Select);
 
         // Code Viewer scope
         self.bind(Scope::CodeViewer, "j", Action::MoveDown);

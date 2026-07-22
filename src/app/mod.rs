@@ -213,29 +213,50 @@ impl AppState {
             Action::MoveUp => self.move_selection_up(),
             Action::MoveDown => self.move_selection_down(),
             Action::Select => {
-                self.status_message = match self.sidebar_view {
+                match self.sidebar_view {
                     SidebarView::FileExplorer => {
-                        if let Some(f) = self.files.get(self.file_selected) {
-                            format!("Selected file: {}", f)
+                        if let Some(f) = self.files.get(self.file_selected).cloned() {
+                            let file_path = self.repo_path.join(&f);
+                            if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                self.code_lines =
+                                    content.lines().map(|s| s.to_string()).collect();
+                                self.cursor_line = 1;
+                                self.status_message = format!("Loaded file: {}", f);
+                            } else {
+                                self.status_message = format!("Could not read file: {}", f);
+                            }
                         } else {
-                            "No file selected".to_string()
+                            self.status_message = "No file selected".to_string();
                         }
                     }
                     SidebarView::ModifiedFiles => {
-                        if let Some(f) = self.modified_files.get(self.modified_selected) {
-                            format!("Selected modified file: {}", f)
+                        if let Some(item) =
+                            self.modified_files.get(self.modified_selected).cloned()
+                        {
+                            let clean_path = item.split_whitespace().next().unwrap_or(&item);
+                            let file_path = self.repo_path.join(clean_path);
+                            if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                self.code_lines =
+                                    content.lines().map(|s| s.to_string()).collect();
+                                self.cursor_line = 1;
+                                self.status_message =
+                                    format!("Loaded modified file: {}", clean_path);
+                            } else {
+                                self.status_message =
+                                    format!("Could not read file: {}", clean_path);
+                            }
                         } else {
-                            "No modified file selected".to_string()
+                            self.status_message = "No modified file selected".to_string();
                         }
                     }
                     SidebarView::CommitTimeline => {
                         if let Some((hash, msg)) = self.commits.get(self.commit_selected) {
-                            format!("Selected commit: {} {}", hash, msg)
+                            self.status_message = format!("Selected commit: {} {}", hash, msg);
                         } else {
-                            "No commit selected".to_string()
+                            "No commit selected".to_string();
                         }
                     }
-                };
+                }
             }
             Action::JumpNextAuto => {
                 self.status_message = format!(
