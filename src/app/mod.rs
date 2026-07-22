@@ -267,6 +267,71 @@ impl AppState {
         }
     }
 
+    pub fn current_file_path(&self) -> Option<String> {
+        match self.sidebar_view {
+            SidebarView::FileExplorer => self.files.get(self.file_selected).cloned(),
+            SidebarView::ModifiedFiles => self
+                .modified_files
+                .get(self.modified_selected)
+                .map(|item| item.split_whitespace().next().unwrap_or(item).to_string()),
+            SidebarView::CommitTimeline => {
+                if let Some(item) = self.modified_files.get(self.modified_selected) {
+                    Some(item.split_whitespace().next().unwrap_or(item).to_string())
+                } else {
+                    self.files.get(self.file_selected).cloned()
+                }
+            }
+        }
+    }
+
+    pub fn perform_timeline_jump(
+        &mut self,
+        scope: crate::timeline::JumpScope,
+        direction: crate::timeline::JumpDirection,
+    ) {
+        let file_path = match self.current_file_path() {
+            Some(path) => path,
+            None => {
+                self.status_message = "No file selected for timeline jump".to_string();
+                return;
+            }
+        };
+
+        let navigator = crate::timeline::TimelineNavigator::new();
+        match navigator.jump(
+            &self.repo_path,
+            &file_path,
+            &self.code_lines,
+            self.cursor_line,
+            self.selected_commit_hash.as_deref(),
+            scope,
+            direction,
+        ) {
+            Ok(Some(result)) => {
+                self.selected_commit_hash = Some(result.commit_hash);
+                self.code_lines = result.code_lines;
+                if self.code_lines.is_empty() {
+                    self.cursor_line = 1;
+                } else {
+                    self.cursor_line = self.cursor_line.clamp(1, self.code_lines.len());
+                }
+                self.status_message = result.status_message;
+                self.update_modified_files_for_selected_commit();
+            }
+            Ok(None) => {
+                self.selected_commit_hash = None;
+                self.load_currently_selected_file();
+                self.status_message = format!(
+                    "Returned to working directory / latest HEAD version of {}",
+                    file_path
+                );
+            }
+            Err(err_msg) => {
+                self.status_message = err_msg;
+            }
+        }
+    }
+
     pub fn active_scope(&self) -> Scope {
         match self.active_panel {
             ActivePanel::Sidebar => Scope::Sidebar,
@@ -307,53 +372,55 @@ impl AppState {
                 }
             }
             Action::JumpNextAuto => {
-                self.status_message = format!(
-                    "Jumping NEXT in [{}] for line {}",
-                    self.nav_mode.name(),
-                    self.cursor_line
-                );
+                let scope = match self.nav_mode {
+                    NavigationMode::File => crate::timeline::JumpScope::File,
+                    NavigationMode::Function => crate::timeline::JumpScope::Function,
+                    NavigationMode::Line => crate::timeline::JumpScope::Line,
+                };
+                self.perform_timeline_jump(scope, crate::timeline::JumpDirection::Next);
             }
             Action::JumpPrevAuto => {
-                self.status_message = format!(
-                    "Jumping PREVIOUS in [{}] for line {}",
-                    self.nav_mode.name(),
-                    self.cursor_line
-                );
+                let scope = match self.nav_mode {
+                    NavigationMode::File => crate::timeline::JumpScope::File,
+                    NavigationMode::Function => crate::timeline::JumpScope::Function,
+                    NavigationMode::Line => crate::timeline::JumpScope::Line,
+                };
+                self.perform_timeline_jump(scope, crate::timeline::JumpDirection::Previous);
             }
             Action::JumpNextFile => {
-                self.status_message = format!(
-                    "Jumping NEXT in [FILE Mode] for line {}",
-                    self.cursor_line
+                self.perform_timeline_jump(
+                    crate::timeline::JumpScope::File,
+                    crate::timeline::JumpDirection::Next,
                 );
             }
             Action::JumpPrevFile => {
-                self.status_message = format!(
-                    "Jumping PREVIOUS in [FILE Mode] for line {}",
-                    self.cursor_line
+                self.perform_timeline_jump(
+                    crate::timeline::JumpScope::File,
+                    crate::timeline::JumpDirection::Previous,
                 );
             }
             Action::JumpNextFunction => {
-                self.status_message = format!(
-                    "Jumping NEXT in [FUNCTION Mode] for line {}",
-                    self.cursor_line
+                self.perform_timeline_jump(
+                    crate::timeline::JumpScope::Function,
+                    crate::timeline::JumpDirection::Next,
                 );
             }
             Action::JumpPrevFunction => {
-                self.status_message = format!(
-                    "Jumping PREVIOUS in [FUNCTION Mode] for line {}",
-                    self.cursor_line
+                self.perform_timeline_jump(
+                    crate::timeline::JumpScope::Function,
+                    crate::timeline::JumpDirection::Previous,
                 );
             }
             Action::JumpNextLine => {
-                self.status_message = format!(
-                    "Jumping NEXT in [LINE Mode] for line {}",
-                    self.cursor_line
+                self.perform_timeline_jump(
+                    crate::timeline::JumpScope::Line,
+                    crate::timeline::JumpDirection::Next,
                 );
             }
             Action::JumpPrevLine => {
-                self.status_message = format!(
-                    "Jumping PREVIOUS in [LINE Mode] for line {}",
-                    self.cursor_line
+                self.perform_timeline_jump(
+                    crate::timeline::JumpScope::Line,
+                    crate::timeline::JumpDirection::Previous,
                 );
             }
             Action::InlineRewrite => {
