@@ -162,6 +162,13 @@ To map a 1-based editor line number to its exact enclosing function byte and lin
    - **Localized Syntax Errors**: Tree-sitter isolates errors into `(ERROR)` nodes. Walking up past `(ERROR)` to the enclosing block cleanly resolves the valid function boundary.
    - **Severe/Unclosed Scope Errors**: If scope braces are incomplete, Tree-sitter produces a top-level `(ERROR)` without a function node. The algorithm safely returns `Ok(None)`, falling back to line/file navigation.
 
+### 4.3 Grammar Extensibility & Dynamic Loading Architecture
+Git-tardis implements a **Hybrid Grammar Architecture** to combine static performance with dynamic user extensibility:
+- **Static Core**: Built-in parsers (Rust, C, C++, Go, Python, TypeScript/JS, Lua) for zero-setup execution.
+- **Dynamic Plugin Loader**: Users can load custom external shared objects (`.so`/`.dylib`) using `libloading` via the standard Tree-sitter C entrypoint (`tree_sitter_<lang>`). Shared library handles are wrapped in `Arc<libloading::Library>` to guarantee symbol memory validity.
+- **TOML & Lua Configuration**: Custom file extension mappings, AST node kinds, and `.scm` queries can be supplied via `~/.config/git-tardis/config.toml` or Neovim `setup()` options.
+- **Graceful Fallback Chain**: If a language parser is uninstalled, fails ABI checks, or raises query errors, Git-tardis automatically falls back to File Mode or Line Mode navigation without raising TUI panics. See [`docs/research/tree-sitter-grammar-extensibility.md`](research/tree-sitter-grammar-extensibility.md).
+
 ---
 
 ## 5. UI Layout Engine & Navigation State Machine

@@ -26,6 +26,7 @@ The design and architecture of Git-tardis are backed by validated proofs of conc
 | **Conflict Resolution Flow** | [`docs/research/conflict-detection-and-resolution.md`](docs/research/conflict-detection-and-resolution.md) | Integrated in rebase PoC | Fail-fast auto-abort with autostash recovery for inline edits; subshell delegation for edit-here. |
 | **Neovim Lua Plugin Launcher** | [`docs/research/neovim-plugin-launcher-packaging.md`](docs/research/neovim-plugin-launcher-packaging.md) | [`neovim-plugin-poc/`](research/neovim-plugin-poc/) | `git-tardis.nvim` floating window wrapper passing `$NVIM` environment variable. |
 | **Syntax Highlighting Engine** | [`docs/research/syntax-highlighting-performance.md`](docs/research/syntax-highlighting-performance.md) | [`syntax-highlighting-poc/`](research/syntax-highlighting-poc/) | Tree-sitter query highlighting (~4.5x–10x faster than `syntect`), viewport cropping, span merging (60% reduction), and Neovim RPC theme syncing. |
+| **Tree-sitter Extensibility** | [`docs/research/tree-sitter-grammar-extensibility.md`](docs/research/tree-sitter-grammar-extensibility.md) | [`tree-sitter-extensibility-poc/`](research/tree-sitter-extensibility-poc/) | Hybrid architecture combining static built-ins with dynamic `libloading` shared objects (`.so`/`.dylib`), TOML/Lua configs, and graceful mode fallbacks. |
 
 ---
 
