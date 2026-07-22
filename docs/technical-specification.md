@@ -234,17 +234,26 @@ pub struct AppState {
 
 ### 5.3 Hierarchical Key Event Routing Matrix
 
-| Scope | Key Binding | Action |
-| :--- | :--- | :--- |
-| **Global** | `q`, `Esc` | Quit application |
-| **Global** | `Tab`, `h`, `l`, `Left`, `Right` | Swap panel focus (`Sidebar` $\leftrightarrow$ `CodeViewer`) |
-| **Global** | `1`, `2`, `3` | Switch `SidebarView` tab (`Explorer`, `Modified`, `Timeline`) |
-| **Global** | `m` | Cycle `NavigationMode` (`File` $\rightarrow$ `Function` $\rightarrow$ `Line` $\rightarrow$ `File`) |
-| **Sidebar Scope** | `j`, `k`, `Up`, `Down` | Navigate selected list item in active sidebar view |
-| **Code Viewer Scope** | `j`, `k`, `Up`, `Down` | Move code cursor line up/down |
-| **Code Viewer Scope** | `n`, `]`, `p`, `[` | Execute timeline jump (`next`/`previous` commit) based on `nav_mode` |
-| **Code Viewer Scope** | `r` | Trigger "Inline rewrite" on current commit |
-| **Code Viewer Scope** | `e` | Trigger "Edit here" on current commit |
+| Scope | Key Binding | Action | Description |
+| :--- | :--- | :--- | :--- |
+| **Global** | `q`, `<Esc>` | `Quit` | Exit application |
+| **Global** | `<Tab>`, `h`, `l`, `<Left>`, `<Right>` | `ToggleFocus` | Swap panel focus (`Sidebar` $\leftrightarrow$ `CodeViewer`) |
+| **Global** | `1`, `2`, `3` | `SetSidebarView` | Switch `SidebarView` tab (`Explorer`, `Modified`, `Timeline`) |
+| **Global** | `m` | `CycleNavMode` | Cycle `NavigationMode` (`File` $\rightarrow$ `Function` $\rightarrow$ `Line` $\rightarrow$ `File`) |
+| **Sidebar Scope** | `j`, `k`, `<Up>`, `<Down>` | `MoveUp` / `MoveDown` | Navigate selected list item in active sidebar view |
+| **Sidebar Scope** | `<CR>` | `Select` | Open selected file or inspect commit |
+| **Code Viewer Scope** | `j`, `k`, `<Up>`, `<Down>` | `MoveUp` / `MoveDown` | Move code cursor line up/down |
+| **Code Viewer Scope** | `]`, `[` | `JumpNextAuto` / `JumpPrevAuto` | Execute timeline jump (`next`/`previous` commit) based on active `nav_mode` |
+| **Code Viewer Scope** | `]m`, `[m` | `JumpNextFile` / `JumpPrevFile` | Force jump to `next`/`previous` commit modifying the open **File** |
+| **Code Viewer Scope** | `]f`, `[f` | `JumpNextFunction` / `JumpPrevFunction` | Force jump to `next`/`previous` commit modifying enclosing **Function** |
+| **Code Viewer Scope** | `]l`, `[l` | `JumpNextLine` / `JumpPrevLine` | Force jump to `next`/`previous` commit modifying cursor **Line** (blame) |
+| **Code Viewer Scope** | `e` | `InlineRewrite` | Trigger "Inline rewrite" on target commit |
+| **Code Viewer Scope** | `E` | `EditHere` | Trigger "Edit here" on target commit |
+
+### 5.4 Keybinding Engine & User Configuration
+- **Keymap Hierarchy Engine**: Key events are checked against the active panel scope (`code_viewer` or `sidebar`) first, falling back to `global` scope.
+- **Multi-Key Disambiguation**: Supports multi-stroke shortcuts (e.g. `]` vs `]f`). Disambiguates exact matches vs prefixes using `AmbiguousMatch` state with a 500ms timeout buffer (`timeoutlen`).
+- **TOML & Neovim Lua Configuration**: Fully customizable via `~/.config/git-tardis/config.toml` and Neovim `setup()` keymap tables. See [`docs/research/configurable-keybindings.md`](research/configurable-keybindings.md).
 
 ---
 
