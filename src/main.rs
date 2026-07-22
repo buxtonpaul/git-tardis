@@ -18,10 +18,12 @@ fn load_repo_data(app: &mut AppState) {
             app.files = files;
         }
         if let Ok(statuses) = repo.get_status() {
-            app.modified_files = statuses
+            let items: Vec<String> = statuses
                 .into_iter()
                 .map(|s| format!("{} ({})", s.path, s.status_code()))
                 .collect();
+            app.uncommitted_files = items.clone();
+            app.modified_files = items;
         }
         if let Ok(commits) = repo.get_commit_history(Some(50)) {
             app.commits = commits

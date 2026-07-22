@@ -222,3 +222,24 @@ fn test_blame_queries() {
     assert_eq!(hunks[0].line_count, 1);
     assert_eq!(hunks[1].line_count, 1);
 }
+
+#[test]
+fn test_get_commit_files() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(&repo, "file_a.txt", "File A content", "Commit A");
+    commit_file(&repo, "file_b.txt", "File B content", "Commit B");
+
+    let history = repo.get_commit_history(Some(10)).unwrap();
+    assert!(history.len() >= 2);
+
+    let commit_b_hash = &history[0].hash; // latest commit (Commit B)
+    let files_b = repo.get_commit_files(commit_b_hash).unwrap();
+    assert_eq!(files_b.len(), 1);
+    assert_eq!(files_b[0].path, "file_b.txt");
+
+    let commit_a_hash = &history[1].hash; // earlier commit (Commit A)
+    let files_a = repo.get_commit_files(commit_a_hash).unwrap();
+    assert_eq!(files_a.len(), 1);
+    assert_eq!(files_a[0].path, "file_a.txt");
+}

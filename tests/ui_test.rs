@@ -183,3 +183,52 @@ fn test_sidebar_file_selection_loads_content() {
     assert_eq!(app.code_lines, vec!["println!(\"File 1 content\");"]);
     assert!(app.status_message.contains("Loaded file: file1.rs"));
 }
+
+#[test]
+fn test_commit_selection_updates_modified_files() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path();
+
+    // Helper to run git
+    let run = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(repo_path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Test User"]);
+    run(&["config", "user.email", "test@example.com"]);
+
+    std::fs::write(repo_path.join("file_a.txt"), "Content A").unwrap();
+    run(&["add", "file_a.txt"]);
+    run(&["commit", "-m", "First commit file_a"]);
+
+    std::fs::write(repo_path.join("file_b.txt"), "Content B").unwrap();
+    run(&["add", "file_b.txt"]);
+    run(&["commit", "-m", "Second commit file_b"]);
+
+    let repo = git_tardis::git::GitRepo::open(repo_path).unwrap();
+    let history = repo.get_commit_history(Some(10)).unwrap();
+
+    let mut app = AppState::new(repo_path.to_path_buf());
+    app.commits = history
+        .into_iter()
+        .map(|c| (c.hash, c.summary))
+        .collect();
+
+    // Highlight commit 0 (Second commit file_b)
+    app.commit_selected = 0;
+    app.update_modified_files_for_selected_commit();
+    assert_eq!(app.modified_files.len(), 1);
+    assert!(app.modified_files[0].contains("file_b.txt"));
+
+    // Highlight commit 1 (First commit file_a)
+    app.commit_selected = 1;
+    app.update_modified_files_for_selected_commit();
+    assert_eq!(app.modified_files.len(), 1);
+    assert!(app.modified_files[0].contains("file_a.txt"));
+}

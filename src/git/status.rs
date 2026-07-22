@@ -60,4 +60,38 @@ impl GitRepo {
 
         Ok(statuses)
     }
+
+    /// Get list of files modified in a specific commit (`git diff-tree --no-commit-id --name-status -r --root <commit_hash>`).
+    pub fn get_commit_files(&self, commit_hash: &str) -> Result<Vec<FileStatus>, GitError> {
+        let output = self.run_git(&[
+            "diff-tree",
+            "--no-commit-id",
+            "--name-status",
+            "-r",
+            "--root",
+            commit_hash,
+        ])?;
+
+        let mut results = Vec::new();
+
+        for line in output.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 2 {
+                let status_str = parts[0];
+                let path = if parts.len() >= 3 {
+                    parts[2] // Rename/copy target path
+                } else {
+                    parts[1]
+                };
+                let status_char = status_str.chars().next().unwrap_or('M');
+                results.push(FileStatus::new(path, status_char, ' '));
+            }
+        }
+
+        Ok(results)
+    }
 }

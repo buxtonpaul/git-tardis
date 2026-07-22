@@ -73,8 +73,11 @@ pub struct AppState {
     pub modified_files: Vec<String>,
     pub modified_selected: usize,
 
+    pub uncommitted_files: Vec<String>,
+
     pub commits: Vec<(String, String)>,
     pub commit_selected: usize,
+    pub selected_commit_hash: Option<String>,
 
     pub code_lines: Vec<String>,
     pub cursor_line: usize, // 1-based index
@@ -97,8 +100,11 @@ impl AppState {
             modified_files: Vec::new(),
             modified_selected: 0,
 
+            uncommitted_files: Vec::new(),
+
             commits: Vec::new(),
             commit_selected: 0,
+            selected_commit_hash: None,
 
             code_lines: Vec::new(),
             cursor_line: 1,
@@ -150,6 +156,7 @@ impl AppState {
                 SidebarView::CommitTimeline => {
                     if !self.commits.is_empty() && self.commit_selected + 1 < self.commits.len() {
                         self.commit_selected += 1;
+                        self.update_modified_files_for_selected_commit();
                     }
                 }
             },
@@ -177,6 +184,7 @@ impl AppState {
                 SidebarView::CommitTimeline => {
                     if self.commit_selected > 0 {
                         self.commit_selected -= 1;
+                        self.update_modified_files_for_selected_commit();
                     }
                 }
             },
@@ -190,6 +198,25 @@ impl AppState {
 
     pub fn quit(&mut self) {
         self.running = false;
+    }
+
+    pub fn update_modified_files_for_selected_commit(&mut self) {
+        if self.commits.is_empty() || self.commit_selected >= self.commits.len() {
+            return;
+        }
+
+        let (hash, _) = self.commits[self.commit_selected].clone();
+        self.selected_commit_hash = Some(hash.clone());
+
+        if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+            if let Ok(commit_files) = repo.get_commit_files(&hash) {
+                self.modified_files = commit_files
+                    .into_iter()
+                    .map(|s| format!("{} ({})", s.path, s.status_code().trim()))
+                    .collect();
+                self.modified_selected = 0;
+            }
+        }
     }
 
     pub fn active_scope(&self) -> Scope {
@@ -234,6 +261,19 @@ impl AppState {
                             self.modified_files.get(self.modified_selected).cloned()
                         {
                             let clean_path = item.split_whitespace().next().unwrap_or(&item);
+                            if let Some(hash) = &self.selected_commit_hash {
+                                if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+                                    if let Ok(content) = repo.get_file_at_commit(hash, clean_path) {
+                                        self.code_lines =
+                                            content.lines().map(|s| s.to_string()).collect();
+                                        self.cursor_line = 1;
+                                        self.status_message =
+                                            format!("Loaded {} at commit {}", clean_path, hash);
+                                        return;
+                                    }
+                                }
+                            }
+
                             let file_path = self.repo_path.join(clean_path);
                             if let Ok(content) = std::fs::read_to_string(&file_path) {
                                 self.code_lines =
@@ -250,10 +290,14 @@ impl AppState {
                         }
                     }
                     SidebarView::CommitTimeline => {
-                        if let Some((hash, msg)) = self.commits.get(self.commit_selected) {
-                            self.status_message = format!("Selected commit: {} {}", hash, msg);
+                        if let Some((hash, msg)) = self.commits.get(self.commit_selected).cloned() {
+                            self.selected_commit_hash = Some(hash.clone());
+                            self.update_modified_files_for_selected_commit();
+                            self.sidebar_view = SidebarView::ModifiedFiles;
+                            self.status_message =
+                                format!("Viewing modified files for commit {} ({})", hash, msg);
                         } else {
-                            "No commit selected".to_string();
+                            self.status_message = "No commit selected".to_string();
                         }
                     }
                 }
