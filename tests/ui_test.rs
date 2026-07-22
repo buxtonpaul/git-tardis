@@ -232,3 +232,118 @@ fn test_commit_selection_updates_modified_files() {
     assert_eq!(app.modified_files.len(), 1);
     assert!(app.modified_files[0].contains("file_a.txt"));
 }
+
+#[test]
+fn test_auto_update_code_viewer_on_file_explorer_navigation() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file1_path = temp_dir.path().join("file1.rs");
+    let file2_path = temp_dir.path().join("file2.rs");
+    std::fs::write(&file1_path, "fn file1() {}\n").unwrap();
+    std::fs::write(&file2_path, "fn file2() {}\n").unwrap();
+
+    let mut app = AppState::new(temp_dir.path().to_path_buf());
+    app.files = vec!["file1.rs".to_string(), "file2.rs".to_string()];
+    app.load_currently_selected_file();
+    assert_eq!(app.code_lines, vec!["fn file1() {}"]);
+
+    // Move selection down (j) -> file2.rs should load automatically
+    app.move_selection_down();
+    assert_eq!(app.file_selected, 1);
+    assert_eq!(app.code_lines, vec!["fn file2() {}"]);
+    assert!(app.status_message.contains("Loaded file: file2.rs"));
+
+    // Move selection up (k) -> file1.rs should load automatically
+    app.move_selection_up();
+    assert_eq!(app.file_selected, 0);
+    assert_eq!(app.code_lines, vec!["fn file1() {}"]);
+    assert!(app.status_message.contains("Loaded file: file1.rs"));
+}
+
+#[test]
+fn test_auto_update_code_viewer_on_modified_files_navigation() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path();
+
+    let run = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(repo_path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Test User"]);
+    run(&["config", "user.email", "test@example.com"]);
+
+    std::fs::write(repo_path.join("file_a.txt"), "Original A\n").unwrap();
+    std::fs::write(repo_path.join("file_b.txt"), "Original B\n").unwrap();
+    run(&["add", "."]);
+    run(&["commit", "-m", "Initial commit"]);
+
+    std::fs::write(repo_path.join("file_a.txt"), "Modified A\n").unwrap();
+    std::fs::write(repo_path.join("file_b.txt"), "Modified B\n").unwrap();
+
+    let mut app = AppState::new(repo_path.to_path_buf());
+    app.set_sidebar_view(SidebarView::ModifiedFiles);
+    app.modified_files = vec!["file_a.txt (M)".to_string(), "file_b.txt (M)".to_string()];
+    app.load_currently_selected_file();
+    assert_eq!(app.code_lines, vec!["Modified A"]);
+
+    // Move selection down -> file_b.txt should load automatically
+    app.move_selection_down();
+    assert_eq!(app.modified_selected, 1);
+    assert_eq!(app.code_lines, vec!["Modified B"]);
+
+    // Move selection up -> file_a.txt should load automatically
+    app.move_selection_up();
+    assert_eq!(app.modified_selected, 0);
+    assert_eq!(app.code_lines, vec!["Modified A"]);
+}
+
+#[test]
+fn test_historical_commit_modified_files_auto_update() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path();
+
+    let run = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(repo_path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Test User"]);
+    run(&["config", "user.email", "test@example.com"]);
+
+    std::fs::write(repo_path.join("file1.txt"), "V1 File 1\n").unwrap();
+    std::fs::write(repo_path.join("file2.txt"), "V1 File 2\n").unwrap();
+    run(&["add", "."]);
+    run(&["commit", "-m", "First commit"]);
+
+    let repo = git_tardis::git::GitRepo::open(repo_path).unwrap();
+    let history = repo.get_commit_history(Some(1)).unwrap();
+    let first_commit_hash = history[0].hash.clone();
+
+    let mut app = AppState::new(repo_path.to_path_buf());
+    app.commits = vec![(first_commit_hash[..7].to_string(), "First commit".to_string())];
+
+    // Select the commit from timeline (Action::Select on CommitTimeline)
+    app.set_sidebar_view(SidebarView::CommitTimeline);
+    app.dispatch_action(Action::Select);
+
+    // Sidebar view is now ModifiedFiles for first_commit
+    assert_eq!(app.sidebar_view, SidebarView::ModifiedFiles);
+    assert_eq!(app.modified_files.len(), 2);
+    // Auto-loaded first modified file
+    assert_eq!(app.code_lines, vec!["V1 File 1"]);
+
+    // Moving down in ModifiedFiles auto-loads second file at that commit
+    app.move_selection_down();
+    assert_eq!(app.modified_selected, 1);
+    assert_eq!(app.code_lines, vec!["V1 File 2"]);
+}

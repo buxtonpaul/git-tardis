@@ -125,6 +125,7 @@ impl AppState {
 
     pub fn set_sidebar_view(&mut self, view: SidebarView) {
         self.sidebar_view = view;
+        self.load_currently_selected_file();
         self.status_message = format!("Sidebar view: {}", view.name());
     }
 
@@ -144,6 +145,7 @@ impl AppState {
                 SidebarView::FileExplorer => {
                     if !self.files.is_empty() && self.file_selected + 1 < self.files.len() {
                         self.file_selected += 1;
+                        self.load_currently_selected_file();
                     }
                 }
                 SidebarView::ModifiedFiles => {
@@ -151,6 +153,7 @@ impl AppState {
                         && self.modified_selected + 1 < self.modified_files.len()
                     {
                         self.modified_selected += 1;
+                        self.load_currently_selected_file();
                     }
                 }
                 SidebarView::CommitTimeline => {
@@ -174,11 +177,13 @@ impl AppState {
                 SidebarView::FileExplorer => {
                     if self.file_selected > 0 {
                         self.file_selected -= 1;
+                        self.load_currently_selected_file();
                     }
                 }
                 SidebarView::ModifiedFiles => {
                     if self.modified_selected > 0 {
                         self.modified_selected -= 1;
+                        self.load_currently_selected_file();
                     }
                 }
                 SidebarView::CommitTimeline => {
@@ -219,6 +224,49 @@ impl AppState {
         }
     }
 
+    pub fn load_currently_selected_file(&mut self) {
+        match self.sidebar_view {
+            SidebarView::FileExplorer => {
+                if let Some(f) = self.files.get(self.file_selected).cloned() {
+                    let file_path = self.repo_path.join(&f);
+                    if let Ok(content) = std::fs::read_to_string(&file_path) {
+                        self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                        self.cursor_line = 1;
+                        self.status_message = format!("Loaded file: {}", f);
+                    } else {
+                        self.status_message = format!("Could not read file: {}", f);
+                    }
+                }
+            }
+            SidebarView::ModifiedFiles => {
+                if let Some(item) = self.modified_files.get(self.modified_selected).cloned() {
+                    let clean_path = item.split_whitespace().next().unwrap_or(&item);
+                    if let Some(hash) = &self.selected_commit_hash {
+                        if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+                            if let Ok(content) = repo.get_file_at_commit(hash, clean_path) {
+                                self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                                self.cursor_line = 1;
+                                self.status_message =
+                                    format!("Loaded {} at commit {}", clean_path, hash);
+                                return;
+                            }
+                        }
+                    }
+
+                    let file_path = self.repo_path.join(clean_path);
+                    if let Ok(content) = std::fs::read_to_string(&file_path) {
+                        self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                        self.cursor_line = 1;
+                        self.status_message = format!("Loaded modified file: {}", clean_path);
+                    } else {
+                        self.status_message = format!("Could not read file: {}", clean_path);
+                    }
+                }
+            }
+            SidebarView::CommitTimeline => {}
+        }
+    }
+
     pub fn active_scope(&self) -> Scope {
         match self.active_panel {
             ActivePanel::Sidebar => Scope::Sidebar,
@@ -241,59 +289,15 @@ impl AppState {
             Action::MoveDown => self.move_selection_down(),
             Action::Select => {
                 match self.sidebar_view {
-                    SidebarView::FileExplorer => {
-                        if let Some(f) = self.files.get(self.file_selected).cloned() {
-                            let file_path = self.repo_path.join(&f);
-                            if let Ok(content) = std::fs::read_to_string(&file_path) {
-                                self.code_lines =
-                                    content.lines().map(|s| s.to_string()).collect();
-                                self.cursor_line = 1;
-                                self.status_message = format!("Loaded file: {}", f);
-                            } else {
-                                self.status_message = format!("Could not read file: {}", f);
-                            }
-                        } else {
-                            self.status_message = "No file selected".to_string();
-                        }
-                    }
-                    SidebarView::ModifiedFiles => {
-                        if let Some(item) =
-                            self.modified_files.get(self.modified_selected).cloned()
-                        {
-                            let clean_path = item.split_whitespace().next().unwrap_or(&item);
-                            if let Some(hash) = &self.selected_commit_hash {
-                                if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
-                                    if let Ok(content) = repo.get_file_at_commit(hash, clean_path) {
-                                        self.code_lines =
-                                            content.lines().map(|s| s.to_string()).collect();
-                                        self.cursor_line = 1;
-                                        self.status_message =
-                                            format!("Loaded {} at commit {}", clean_path, hash);
-                                        return;
-                                    }
-                                }
-                            }
-
-                            let file_path = self.repo_path.join(clean_path);
-                            if let Ok(content) = std::fs::read_to_string(&file_path) {
-                                self.code_lines =
-                                    content.lines().map(|s| s.to_string()).collect();
-                                self.cursor_line = 1;
-                                self.status_message =
-                                    format!("Loaded modified file: {}", clean_path);
-                            } else {
-                                self.status_message =
-                                    format!("Could not read file: {}", clean_path);
-                            }
-                        } else {
-                            self.status_message = "No modified file selected".to_string();
-                        }
+                    SidebarView::FileExplorer | SidebarView::ModifiedFiles => {
+                        self.load_currently_selected_file();
                     }
                     SidebarView::CommitTimeline => {
                         if let Some((hash, msg)) = self.commits.get(self.commit_selected).cloned() {
                             self.selected_commit_hash = Some(hash.clone());
                             self.update_modified_files_for_selected_commit();
                             self.sidebar_view = SidebarView::ModifiedFiles;
+                            self.load_currently_selected_file();
                             self.status_message =
                                 format!("Viewing modified files for commit {} ({})", hash, msg);
                         } else {
