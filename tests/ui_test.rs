@@ -27,7 +27,7 @@ fn test_split_panel_rendering_and_borders() {
 
     assert!(dbg_str.contains("Git-tardis TUI"));
     assert!(dbg_str.contains("1: Explorer"));
-    assert!(dbg_str.contains("2: Modified Files"));
+    assert!(dbg_str.contains("2: Dirty Files"));
     assert!(dbg_str.contains("3: Commit Timeline"));
     assert!(dbg_str.contains("Sidebar [1: Explorer]"));
     assert!(dbg_str.contains("Code Viewer - Mode: [FILE Mode]"));
@@ -54,7 +54,7 @@ fn test_sidebar_tab_views_rendering() {
 
     let mut app = AppState::new(PathBuf::from("."));
     app.files = vec!["file1.rs".to_string()];
-    app.modified_files = vec!["mod1.rs (M)".to_string()];
+    app.dirty_files = vec!["mod1.rs (M)".to_string()];
     app.commits = vec![("1234567".to_string(), "commit message".to_string())];
 
     // Tab 1: Explorer
@@ -286,18 +286,18 @@ fn test_auto_update_code_viewer_on_modified_files_navigation() {
 
     let mut app = AppState::new(repo_path.to_path_buf());
     app.set_sidebar_view(SidebarView::ModifiedFiles);
-    app.modified_files = vec!["file_a.txt (M)".to_string(), "file_b.txt (M)".to_string()];
+    app.dirty_files = vec!["file_a.txt (M)".to_string(), "file_b.txt (M)".to_string()];
     app.load_currently_selected_file();
     assert_eq!(app.code_lines, vec!["Modified A"]);
 
     // Move selection down -> file_b.txt should load automatically
     app.move_selection_down();
-    assert_eq!(app.modified_selected, 1);
+    assert_eq!(app.dirty_selected, 1);
     assert_eq!(app.code_lines, vec!["Modified B"]);
 
     // Move selection up -> file_a.txt should load automatically
     app.move_selection_up();
-    assert_eq!(app.modified_selected, 0);
+    assert_eq!(app.dirty_selected, 0);
     assert_eq!(app.code_lines, vec!["Modified A"]);
 }
 

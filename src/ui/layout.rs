@@ -24,10 +24,15 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         .borders(Borders::ALL)
         .title(" Git-tardis TUI ");
 
+    let tab2_title = match &state.selected_commit_hash {
+        Some(hash) => format!("2: Modified [{}]", &hash[..7.min(hash.len())]),
+        None => "2: Dirty Files".to_string(),
+    };
+
     let sidebar_titles = vec![
-        SidebarView::FileExplorer.name(),
-        SidebarView::ModifiedFiles.name(),
-        SidebarView::CommitTimeline.name(),
+        SidebarView::FileExplorer.name().to_string(),
+        tab2_title.clone(),
+        SidebarView::CommitTimeline.name().to_string(),
     ];
 
     let selected_tab = match state.sidebar_view {
@@ -59,9 +64,15 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     } else {
         Color::DarkGray
     };
+    let sidebar_title_name = match state.sidebar_view {
+        SidebarView::FileExplorer => SidebarView::FileExplorer.name().to_string(),
+        SidebarView::ModifiedFiles => tab2_title,
+        SidebarView::CommitTimeline => SidebarView::CommitTimeline.name().to_string(),
+    };
+
     let sidebar_block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" Sidebar [{}] ", state.sidebar_view.name()))
+        .title(format!(" Sidebar [{}] ", sidebar_title_name))
         .border_style(Style::default().fg(sidebar_border_color));
 
     match state.sidebar_view {
@@ -85,14 +96,19 @@ pub fn render(frame: &mut Frame, state: &AppState) {
             frame.render_widget(list, main_chunks[0]);
         }
         SidebarView::ModifiedFiles => {
-            let items: Vec<ListItem> = state
-                .modified_files
+            let (list_items, sel_index) = if state.selected_commit_hash.is_some() {
+                (&state.modified_files, state.modified_selected)
+            } else {
+                (&state.dirty_files, state.dirty_selected)
+            };
+
+            let items: Vec<ListItem> = list_items
                 .iter()
                 .enumerate()
                 .map(|(i, f)| {
-                    let style = if i == state.modified_selected && is_sidebar_active {
+                    let style = if i == sel_index && is_sidebar_active {
                         Style::default().bg(Color::Blue).fg(Color::White)
-                    } else if i == state.modified_selected {
+                    } else if i == sel_index {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default()
@@ -287,7 +303,7 @@ mod tests {
         // Check essential UI titles and sections
         assert!(content.contains("Git-tardis TUI"));
         assert!(content.contains("1: Explorer"));
-        assert!(content.contains("2: Modified Files"));
+        assert!(content.contains("2: Dirty Files"));
         assert!(content.contains("3: Commit Timeline"));
         assert!(content.contains("Sidebar [1: Explorer]"));
         assert!(content.contains("Code Viewer - Mode: [FILE Mode]"));

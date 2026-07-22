@@ -72,6 +72,9 @@ pub struct AppState {
     pub files: Vec<String>,
     pub file_selected: usize,
 
+    pub dirty_files: Vec<String>,
+    pub dirty_selected: usize,
+
     pub modified_files: Vec<String>,
     pub modified_selected: usize,
 
@@ -102,6 +105,9 @@ impl AppState {
 
             files: Vec::new(),
             file_selected: 0,
+
+            dirty_files: Vec::new(),
+            dirty_selected: 0,
 
             modified_files: Vec::new(),
             modified_selected: 0,
@@ -159,11 +165,20 @@ impl AppState {
                     }
                 }
                 SidebarView::ModifiedFiles => {
-                    if !self.modified_files.is_empty()
-                        && self.modified_selected + 1 < self.modified_files.len()
-                    {
-                        self.modified_selected += 1;
-                        self.load_currently_selected_file();
+                    if self.selected_commit_hash.is_some() {
+                        if !self.modified_files.is_empty()
+                            && self.modified_selected + 1 < self.modified_files.len()
+                        {
+                            self.modified_selected += 1;
+                            self.load_currently_selected_file();
+                        }
+                    } else {
+                        if !self.dirty_files.is_empty()
+                            && self.dirty_selected + 1 < self.dirty_files.len()
+                        {
+                            self.dirty_selected += 1;
+                            self.load_currently_selected_file();
+                        }
                     }
                 }
                 SidebarView::CommitTimeline => {
@@ -192,9 +207,16 @@ impl AppState {
                     }
                 }
                 SidebarView::ModifiedFiles => {
-                    if self.modified_selected > 0 {
-                        self.modified_selected -= 1;
-                        self.load_currently_selected_file();
+                    if self.selected_commit_hash.is_some() {
+                        if self.modified_selected > 0 {
+                            self.modified_selected -= 1;
+                            self.load_currently_selected_file();
+                        }
+                    } else {
+                        if self.dirty_selected > 0 {
+                            self.dirty_selected -= 1;
+                            self.load_currently_selected_file();
+                        }
                     }
                 }
                 SidebarView::CommitTimeline => {
@@ -234,6 +256,13 @@ impl AppState {
                 self.modified_selected = 0;
             }
         }
+        self.load_currently_selected_file();
+    }
+
+    pub fn reset_time_travel(&mut self) {
+        self.selected_commit_hash = None;
+        self.load_currently_selected_file();
+        self.status_message = "Exited Time-Travel mode (returned to working directory)".to_string();
     }
 
     pub fn load_currently_selected_file(&mut self) {
@@ -248,50 +277,143 @@ impl AppState {
                         self.status_message = format!("Loaded file: {}", f);
                         self.update_current_line_blame();
                     } else {
+                        self.code_lines.clear();
+                        self.cursor_line = 1;
                         self.status_message = format!("Could not read file: {}", f);
                     }
+                } else {
+                    self.code_lines.clear();
+                    self.cursor_line = 1;
                 }
             }
             SidebarView::ModifiedFiles => {
-                if let Some(item) = self.modified_files.get(self.modified_selected).cloned() {
-                    let clean_path = item.split_whitespace().next().unwrap_or(&item);
-                    if let Some(hash) = &self.selected_commit_hash {
+                if let Some(hash) = &self.selected_commit_hash {
+                    if let Some(item) = self.modified_files.get(self.modified_selected).cloned() {
+                        let clean_path = item.split_whitespace().next().unwrap_or(&item);
+                        let is_deleted = item.contains("(D)");
+
+                        if is_deleted {
+                            self.code_lines.clear();
+                            self.cursor_line = 1;
+                            let short_hash = &hash[..7.min(hash.len())];
+                            self.status_message = format!("File '{}' was deleted in commit {}", clean_path, short_hash);
+                            return;
+                        }
+
                         if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
                             if let Ok(content) = repo.get_file_at_commit(hash, clean_path) {
                                 self.code_lines = content.lines().map(|s| s.to_string()).collect();
                                 self.cursor_line = 1;
                                 self.code_scroll_offset = 0;
+                                let short_hash = &hash[..7.min(hash.len())];
                                 self.status_message =
-                                    format!("Loaded {} at commit {}", clean_path, hash);
+                                    format!("Loaded {} at commit {}", clean_path, short_hash);
+                                self.update_current_line_blame();
+                                return;
+                            }
+                        }
+
+                        self.code_lines.clear();
+                        self.cursor_line = 1;
+                        self.code_scroll_offset = 0;
+                        let short_hash = &hash[..7.min(hash.len())];
+                        self.status_message =
+                            format!("Could not read {} at commit {}", clean_path, short_hash);
+                        self.update_current_line_blame();
+                    } else {
+                        self.code_lines.clear();
+                        self.cursor_line = 1;
+                        self.code_scroll_offset = 0;
+                        self.update_current_line_blame();
+                    }
+                } else {
+                    if let Some(item) = self.dirty_files.get(self.dirty_selected).cloned() {
+                        let clean_path = item.split_whitespace().next().unwrap_or(&item);
+                        let is_deleted = item.contains("(D)");
+
+                        if is_deleted {
+                            self.code_lines.clear();
+                            self.cursor_line = 1;
+                            self.code_scroll_offset = 0;
+                            self.status_message =
+                                format!("File '{}' was deleted in working tree", clean_path);
+                            self.update_current_line_blame();
+                            return;
+                        }
+
+                        let file_path = self.repo_path.join(clean_path);
+                        if let Ok(content) = std::fs::read_to_string(&file_path) {
+                            self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                            self.cursor_line = 1;
+                            self.code_scroll_offset = 0;
+                            self.status_message = format!("Loaded dirty file: {}", clean_path);
+                            self.update_current_line_blame();
+                        } else {
+                            self.code_lines.clear();
+                            self.cursor_line = 1;
+                            self.code_scroll_offset = 0;
+                            self.status_message = format!("Could not read file: {}", clean_path);
+                            self.update_current_line_blame();
+                        }
+                    } else {
+                        self.code_lines.clear();
+                        self.cursor_line = 1;
+                        self.code_scroll_offset = 0;
+                        self.update_current_line_blame();
+                    }
+                }
+            }
+            SidebarView::CommitTimeline => {
+                if let Some(hash) = &self.selected_commit_hash {
+                    if let Some(item) = self.modified_files.get(self.modified_selected).cloned() {
+                        let clean_path = item.split_whitespace().next().unwrap_or(&item);
+                        let is_deleted = item.contains("(D)");
+
+                        if is_deleted {
+                            self.code_lines.clear();
+                            self.cursor_line = 1;
+                            self.code_scroll_offset = 0;
+                            let short_hash = &hash[..7.min(hash.len())];
+                            self.status_message =
+                                format!("File '{}' was deleted in commit {}", clean_path, short_hash);
+                            self.update_current_line_blame();
+                            return;
+                        }
+
+                        if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+                            if let Ok(content) = repo.get_file_at_commit(hash, clean_path) {
+                                self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                                self.cursor_line = 1;
+                                self.code_scroll_offset = 0;
+                                let short_hash = &hash[..7.min(hash.len())];
+                                self.status_message =
+                                    format!("Loaded {} at commit {}", clean_path, short_hash);
                                 self.update_current_line_blame();
                                 return;
                             }
                         }
                     }
-
-                    let file_path = self.repo_path.join(clean_path);
-                    if let Ok(content) = std::fs::read_to_string(&file_path) {
-                        self.code_lines = content.lines().map(|s| s.to_string()).collect();
-                        self.cursor_line = 1;
-                        self.code_scroll_offset = 0;
-                        self.status_message = format!("Loaded modified file: {}", clean_path);
-                        self.update_current_line_blame();
-                    } else {
-                        self.status_message = format!("Could not read file: {}", clean_path);
-                    }
                 }
             }
-            SidebarView::CommitTimeline => {}
+                }
+            }
         }
     }
 
     pub fn current_file_path(&self) -> Option<String> {
         match self.sidebar_view {
             SidebarView::FileExplorer => self.files.get(self.file_selected).cloned(),
-            SidebarView::ModifiedFiles => self
-                .modified_files
-                .get(self.modified_selected)
-                .map(|item| item.split_whitespace().next().unwrap_or(item).to_string()),
+            SidebarView::ModifiedFiles => {
+                if self.selected_commit_hash.is_some() {
+                    self.modified_files
+                        .get(self.modified_selected)
+                        .map(|item| item.split_whitespace().next().unwrap_or(item).to_string())
+                } else {
+                    self.dirty_files
+                        .get(self.dirty_selected)
+                        .map(|item| item.split_whitespace().next().unwrap_or(item).to_string())
+                }
+            }
             SidebarView::CommitTimeline => {
                 if let Some(item) = self.modified_files.get(self.modified_selected) {
                     Some(item.split_whitespace().next().unwrap_or(item).to_string())
@@ -416,7 +538,13 @@ impl AppState {
 
     pub fn dispatch_action(&mut self, action: Action) {
         match action {
-            Action::Quit => self.quit(),
+            Action::Quit => {
+                if self.selected_commit_hash.is_some() {
+                    self.reset_time_travel();
+                } else {
+                    self.quit();
+                }
+            }
             Action::ToggleFocus => self.toggle_panel_focus(),
             Action::SetSidebarView(index) => match index {
                 1 => self.set_sidebar_view(SidebarView::FileExplorer),
