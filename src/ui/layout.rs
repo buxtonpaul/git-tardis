@@ -1,0 +1,255 @@
+use ratatui::{
+    Frame,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs},
+};
+
+use crate::app::{ActivePanel, AppState, SidebarView};
+
+pub fn render(frame: &mut Frame, state: &AppState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Header & Sidebar tab selector
+            Constraint::Min(0),    // Main split workspace
+            Constraint::Length(3), // Footer status bar
+        ])
+        .split(frame.area());
+
+    // 1. Top Header & Tab Selector
+    let header_block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Git-tardis TUI ");
+
+    let sidebar_titles = vec![
+        SidebarView::FileExplorer.name(),
+        SidebarView::ModifiedFiles.name(),
+        SidebarView::CommitTimeline.name(),
+    ];
+
+    let selected_tab = match state.sidebar_view {
+        SidebarView::FileExplorer => 0,
+        SidebarView::ModifiedFiles => 1,
+        SidebarView::CommitTimeline => 2,
+    };
+
+    let tabs = Tabs::new(sidebar_titles)
+        .block(header_block)
+        .select(selected_tab)
+        .highlight_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+    frame.render_widget(tabs, chunks[0]);
+
+    // 2. Middle Main Workspace (32% Sidebar / 68% Code Viewer Split)
+    let main_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(32),
+            Constraint::Percentage(68),
+        ])
+        .split(chunks[1]);
+
+    // Left Sidebar rendering
+    let is_sidebar_active = state.active_panel == ActivePanel::Sidebar;
+    let sidebar_border_color = if is_sidebar_active {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
+    let sidebar_block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" Sidebar [{}] ", state.sidebar_view.name()))
+        .border_style(Style::default().fg(sidebar_border_color));
+
+    match state.sidebar_view {
+        SidebarView::FileExplorer => {
+            let items: Vec<ListItem> = state
+                .files
+                .iter()
+                .enumerate()
+                .map(|(i, f)| {
+                    let style = if i == state.file_selected && is_sidebar_active {
+                        Style::default().bg(Color::Blue).fg(Color::White)
+                    } else if i == state.file_selected {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(f.as_str()).style(style)
+                })
+                .collect();
+            let list = List::new(items).block(sidebar_block);
+            frame.render_widget(list, main_chunks[0]);
+        }
+        SidebarView::ModifiedFiles => {
+            let items: Vec<ListItem> = state
+                .modified_files
+                .iter()
+                .enumerate()
+                .map(|(i, f)| {
+                    let style = if i == state.modified_selected && is_sidebar_active {
+                        Style::default().bg(Color::Blue).fg(Color::White)
+                    } else if i == state.modified_selected {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(f.as_str()).style(style)
+                })
+                .collect();
+            let list = List::new(items).block(sidebar_block);
+            frame.render_widget(list, main_chunks[0]);
+        }
+        SidebarView::CommitTimeline => {
+            let items: Vec<ListItem> = state
+                .commits
+                .iter()
+                .enumerate()
+                .map(|(i, (hash, msg))| {
+                    let text = format!("{} {}", hash, msg);
+                    let style = if i == state.commit_selected && is_sidebar_active {
+                        Style::default().bg(Color::Blue).fg(Color::White)
+                    } else if i == state.commit_selected {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(text).style(style)
+                })
+                .collect();
+            let list = List::new(items).block(sidebar_block);
+            frame.render_widget(list, main_chunks[0]);
+        }
+    }
+
+    // Right Code Viewer rendering
+    let is_code_active = state.active_panel == ActivePanel::CodeViewer;
+    let code_border_color = if is_code_active {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
+    let code_block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" Code Viewer - Mode: [{}] ", state.nav_mode.name()))
+        .border_style(Style::default().fg(code_border_color));
+
+    let mut formatted_code = Vec::new();
+    if state.code_lines.is_empty() {
+        formatted_code.push(Line::from(Span::styled(
+            "  (No file or code content loaded)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (idx, line) in state.code_lines.iter().enumerate() {
+            let line_num = idx + 1;
+            let is_cursor = line_num == state.cursor_line;
+            let prefix = if is_cursor { "> " } else { "  " };
+            let line_style = if is_cursor && is_code_active {
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else if is_cursor {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+
+            let content = format!("{:>3} {}{}", line_num, prefix, line);
+            formatted_code.push(Line::from(Span::styled(content, line_style)));
+        }
+    }
+
+    let paragraph = Paragraph::new(formatted_code).block(code_block);
+    frame.render_widget(paragraph, main_chunks[1]);
+
+    // 3. Footer Status Bar
+    let status_text = format!(
+        " Status: {} | Keys: [Tab] Switch Panel | [1/2/3] Sidebar View | [m] Nav Mode | [q] Quit",
+        state.status_message
+    );
+    let status_bar = Paragraph::new(status_text)
+        .block(Block::default().borders(Borders::ALL).title(" Controls "))
+        .style(Style::default().fg(Color::Green));
+    frame.render_widget(status_bar, chunks[2]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_ui_rendering_structure() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = AppState::new(PathBuf::from("."));
+        app.files = vec!["src/main.rs".into(), "Cargo.toml".into()];
+        app.code_lines = vec!["fn main() {}".into()];
+
+        terminal.draw(|f| render(f, &app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = format!("{:?}", buffer);
+
+        // Check essential UI titles and sections
+        assert!(content.contains("Git-tardis TUI"));
+        assert!(content.contains("1: Explorer"));
+        assert!(content.contains("2: Modified Files"));
+        assert!(content.contains("3: Commit Timeline"));
+        assert!(content.contains("Sidebar [1: Explorer]"));
+        assert!(content.contains("Code Viewer - Mode: [FILE Mode]"));
+        assert!(content.contains("src/main.rs"));
+        assert!(content.contains("fn main() {}"));
+    }
+
+    #[test]
+    fn test_border_color_focus_toggle() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = AppState::new(PathBuf::from("."));
+        app.files = vec!["src/main.rs".into()];
+
+        // Render with Sidebar active
+        terminal.draw(|f| render(f, &app)).unwrap();
+        let sidebar_rect = main_chunks_0_rect(); // top left panel
+        let code_rect = main_chunks_1_rect();
+
+        // Cell at top-left of sidebar block should be Cyan when active
+        let sidebar_border_cell = &terminal.backend().buffer()[(sidebar_rect.0, sidebar_rect.1)];
+        assert_eq!(sidebar_border_cell.fg, Color::Cyan);
+
+        let code_border_cell = &terminal.backend().buffer()[(code_rect.0, code_rect.1)];
+        assert_eq!(code_border_cell.fg, Color::DarkGray);
+
+        // Switch focus to CodeViewer
+        app.toggle_panel_focus();
+        terminal.draw(|f| render(f, &app)).unwrap();
+
+        let sidebar_border_cell_2 =
+            &terminal.backend().buffer()[(sidebar_rect.0, sidebar_rect.1)];
+        assert_eq!(sidebar_border_cell_2.fg, Color::DarkGray);
+
+        let code_border_cell_2 = &terminal.backend().buffer()[(code_rect.0, code_rect.1)];
+        assert_eq!(code_border_cell_2.fg, Color::Cyan);
+    }
+
+    fn main_chunks_0_rect() -> (u16, u16) {
+        // Main split is at row y=3 (below header height 3). Left sidebar starts at x=0, y=3
+        (0, 3)
+    }
+
+    fn main_chunks_1_rect() -> (u16, u16) {
+        // Right code viewer starts at x=32, y=3 on a 100-col screen (32% of 100 = 32)
+        (32, 3)
+    }
+}

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::ui::keymap::{Action, Scope};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ActivePanel {
     #[default]
@@ -18,7 +20,7 @@ pub enum SidebarView {
 impl SidebarView {
     pub fn name(&self) -> &'static str {
         match self {
-            SidebarView::FileExplorer => "1: File Explorer",
+            SidebarView::FileExplorer => "1: Explorer",
             SidebarView::ModifiedFiles => "2: Modified Files",
             SidebarView::CommitTimeline => "3: Commit Timeline",
         }
@@ -188,6 +190,110 @@ impl AppState {
 
     pub fn quit(&mut self) {
         self.running = false;
+    }
+
+    pub fn active_scope(&self) -> Scope {
+        match self.active_panel {
+            ActivePanel::Sidebar => Scope::Sidebar,
+            ActivePanel::CodeViewer => Scope::CodeViewer,
+        }
+    }
+
+    pub fn dispatch_action(&mut self, action: Action) {
+        match action {
+            Action::Quit => self.quit(),
+            Action::ToggleFocus => self.toggle_panel_focus(),
+            Action::SetSidebarView(index) => match index {
+                1 => self.set_sidebar_view(SidebarView::FileExplorer),
+                2 => self.set_sidebar_view(SidebarView::ModifiedFiles),
+                3 => self.set_sidebar_view(SidebarView::CommitTimeline),
+                _ => {}
+            },
+            Action::CycleNavMode => self.cycle_navigation_mode(),
+            Action::MoveUp => self.move_selection_up(),
+            Action::MoveDown => self.move_selection_down(),
+            Action::Select => {
+                self.status_message = match self.sidebar_view {
+                    SidebarView::FileExplorer => {
+                        if let Some(f) = self.files.get(self.file_selected) {
+                            format!("Selected file: {}", f)
+                        } else {
+                            "No file selected".to_string()
+                        }
+                    }
+                    SidebarView::ModifiedFiles => {
+                        if let Some(f) = self.modified_files.get(self.modified_selected) {
+                            format!("Selected modified file: {}", f)
+                        } else {
+                            "No modified file selected".to_string()
+                        }
+                    }
+                    SidebarView::CommitTimeline => {
+                        if let Some((hash, msg)) = self.commits.get(self.commit_selected) {
+                            format!("Selected commit: {} {}", hash, msg)
+                        } else {
+                            "No commit selected".to_string()
+                        }
+                    }
+                };
+            }
+            Action::JumpNextAuto => {
+                self.status_message = format!(
+                    "Jumping NEXT in [{}] for line {}",
+                    self.nav_mode.name(),
+                    self.cursor_line
+                );
+            }
+            Action::JumpPrevAuto => {
+                self.status_message = format!(
+                    "Jumping PREVIOUS in [{}] for line {}",
+                    self.nav_mode.name(),
+                    self.cursor_line
+                );
+            }
+            Action::JumpNextFile => {
+                self.status_message = format!(
+                    "Jumping NEXT in [FILE Mode] for line {}",
+                    self.cursor_line
+                );
+            }
+            Action::JumpPrevFile => {
+                self.status_message = format!(
+                    "Jumping PREVIOUS in [FILE Mode] for line {}",
+                    self.cursor_line
+                );
+            }
+            Action::JumpNextFunction => {
+                self.status_message = format!(
+                    "Jumping NEXT in [FUNCTION Mode] for line {}",
+                    self.cursor_line
+                );
+            }
+            Action::JumpPrevFunction => {
+                self.status_message = format!(
+                    "Jumping PREVIOUS in [FUNCTION Mode] for line {}",
+                    self.cursor_line
+                );
+            }
+            Action::JumpNextLine => {
+                self.status_message = format!(
+                    "Jumping NEXT in [LINE Mode] for line {}",
+                    self.cursor_line
+                );
+            }
+            Action::JumpPrevLine => {
+                self.status_message = format!(
+                    "Jumping PREVIOUS in [LINE Mode] for line {}",
+                    self.cursor_line
+                );
+            }
+            Action::InlineRewrite => {
+                self.status_message = "Triggered Inline Rewrite".to_string();
+            }
+            Action::EditHere => {
+                self.status_message = "Triggered Edit Here".to_string();
+            }
+        }
     }
 }
 
