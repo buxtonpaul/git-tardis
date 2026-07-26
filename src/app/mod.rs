@@ -404,6 +404,24 @@ impl AppState {
                     self.modified_selected = 0;
                 }
             }
+
+            // Update file explorer list for this target commit
+            if let Ok(tree_files) = repo.list_files_at_commit(&hash) {
+                self.files = tree_files;
+                if let Some(cur_file) = self.current_file_path() {
+                    if let Some(f_idx) = self.files.iter().position(|f| f == &cur_file) {
+                        self.file_selected = f_idx;
+                    } else if !self.files.is_empty() {
+                        self.file_selected = self.file_selected.min(self.files.len() - 1);
+                    } else {
+                        self.file_selected = 0;
+                    }
+                } else if !self.files.is_empty() {
+                    self.file_selected = self.file_selected.min(self.files.len() - 1);
+                } else {
+                    self.file_selected = 0;
+                }
+            }
         }
 
         self.update_file_diff_highlights();
@@ -411,6 +429,24 @@ impl AppState {
 
     pub fn reset_time_travel(&mut self) {
         self.selected_commit_hash = None;
+        if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+            if let Ok(wd_files) = repo.list_files() {
+                self.files = wd_files;
+                if let Some(cur_file) = self.current_file_path() {
+                    if let Some(f_idx) = self.files.iter().position(|f| f == &cur_file) {
+                        self.file_selected = f_idx;
+                    } else if !self.files.is_empty() {
+                        self.file_selected = self.file_selected.min(self.files.len() - 1);
+                    } else {
+                        self.file_selected = 0;
+                    }
+                } else if !self.files.is_empty() {
+                    self.file_selected = self.file_selected.min(self.files.len() - 1);
+                } else {
+                    self.file_selected = 0;
+                }
+            }
+        }
         self.clear_blame_cache();
         self.load_currently_selected_file();
         self.status_message = "Exited Time-Travel mode (returned to working directory)".to_string();

@@ -26,6 +26,25 @@ impl GitRepo {
         Ok(files)
     }
 
+    /// List all tracked files at a specific commit (`git ls-tree -r --name-only -z <commit>`).
+    pub fn list_files_at_commit(&self, commit_hash: &str) -> Result<Vec<String>, GitError> {
+        let bytes = self.run_git_bytes(&["ls-tree", "-r", "--name-only", "-z", commit_hash])?;
+
+        let mut files = Vec::new();
+        for slice in bytes.split(|&b| b == 0) {
+            if slice.is_empty() {
+                continue;
+            }
+            let path_str = String::from_utf8_lossy(slice).to_string();
+            if !path_str.is_empty() {
+                files.push(path_str);
+            }
+        }
+
+        files.sort();
+        Ok(files)
+    }
+
     /// Query repository status (`git status --porcelain=v1 -z`).
     pub fn get_status(&self) -> Result<Vec<FileStatus>, GitError> {
         let bytes = self.run_git_bytes(&["status", "--porcelain=v1", "-z"])?;
