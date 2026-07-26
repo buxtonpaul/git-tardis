@@ -522,7 +522,6 @@ impl AppState {
                 if let Some(hash) = self.selected_commit_hash.clone() {
                     let cur_file = self.current_file_path();
                     if let Some(clean_path) = cur_file {
-                        self.active_file = Some(clean_path.clone());
                         let short_hash = &hash[..7.min(hash.len())];
                         if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
                             match repo.get_file_at_commit(&hash, &clean_path) {
@@ -587,14 +586,11 @@ impl AppState {
     }
 
     pub fn current_file_path(&self) -> Option<String> {
+        if let Some(f) = &self.active_file {
+            return Some(f.clone());
+        }
         match self.sidebar_view {
-            SidebarView::FileExplorer => {
-                if let Some(f) = &self.active_file {
-                    Some(f.clone())
-                } else {
-                    self.files.get(self.file_selected).cloned()
-                }
-            }
+            SidebarView::FileExplorer => self.files.get(self.file_selected).cloned(),
             SidebarView::ModifiedFiles => {
                 if self.selected_commit_hash.is_some() {
                     self.modified_files
@@ -609,8 +605,6 @@ impl AppState {
             SidebarView::CommitTimeline | SidebarView::TargetCandidates => {
                 if let Some(item) = self.modified_files.get(self.modified_selected) {
                     Some(item.split_whitespace().next().unwrap_or(item).to_string())
-                } else if let Some(f) = &self.active_file {
-                    Some(f.clone())
                 } else {
                     self.files.get(self.file_selected).cloned()
                 }
