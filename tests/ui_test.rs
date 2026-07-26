@@ -467,3 +467,54 @@ fn test_current_line_git_blame_rendering_and_navigation() {
     let dbg4 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg4.contains("add line_two function"));
 }
+
+#[test]
+fn test_code_viewer_viewport_scrolling_on_cursor_navigation() {
+    let backend = TestBackend::new(100, 15);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    let mut app = AppState::new(PathBuf::from("."));
+    app.files = vec!["test.txt".to_string()];
+    app.file_selected = 0;
+    app.code_lines = (1..=20).map(|i| format!("line {}", i)).collect();
+    app.active_panel = ActivePanel::CodeViewer;
+
+    // 1. Initial State: cursor on line 1
+    // Total height = 15. Header (3), Footer (3), Main workspace height = 9.
+    // Code Viewer inner content height = 9 - 2 (borders) = 7 lines.
+    terminal.draw(|f| render(f, &app)).unwrap();
+    let dbg1 = format!("{:?}", terminal.backend().buffer());
+
+    // Line 1 should be visible
+    assert!(dbg1.contains("1 > line 1"));
+    assert!(dbg1.contains("7   line 7"));
+    // Line 10 should NOT be visible yet
+    assert!(!dbg1.contains("10   line 10"));
+
+    // 2. Move cursor down past bottom of viewport (e.g. to line 11)
+    for _ in 0..10 {
+        app.move_selection_down();
+    }
+    assert_eq!(app.cursor_line, 11);
+
+    terminal.draw(|f| render(f, &app)).unwrap();
+    let dbg2 = format!("{:?}", terminal.backend().buffer());
+
+    // Line 11 should now be visible at the cursor
+    assert!(dbg2.contains("11 > line 11"));
+    assert!(dbg2.contains(" 5   line 5"));
+    // Line 1 should have scrolled off the top
+    assert!(!dbg2.contains("  1   line 1"));
+
+    // 3. Move cursor back up (e.g. back to line 3)
+    for _ in 0..8 {
+        app.move_selection_up();
+    }
+    assert_eq!(app.cursor_line, 3);
+
+    terminal.draw(|f| render(f, &app)).unwrap();
+    let dbg3 = format!("{:?}", terminal.backend().buffer());
+
+    // Line 3 should now be visible at the top of the scrolled viewport
+    assert!(dbg3.contains("3 > line 3"));
+}

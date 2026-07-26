@@ -234,7 +234,23 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         }
     }
 
-    let paragraph = Paragraph::new(formatted_code).block(code_block);
+    let viewport_height = main_chunks[1].height.saturating_sub(2) as usize;
+    let scroll_offset = if state.code_lines.is_empty() || viewport_height == 0 {
+        0
+    } else {
+        let cursor_idx = state.cursor_line.saturating_sub(1);
+        if cursor_idx < state.code_scroll_offset {
+            cursor_idx
+        } else if cursor_idx >= state.code_scroll_offset + viewport_height {
+            cursor_idx + 1 - viewport_height
+        } else {
+            state.code_scroll_offset
+        }
+    };
+
+    let paragraph = Paragraph::new(formatted_code)
+        .block(code_block)
+        .scroll((scroll_offset as u16, 0));
     frame.render_widget(paragraph, main_chunks[1]);
 
     // 3. Footer Status Bar

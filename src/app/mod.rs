@@ -82,7 +82,8 @@ pub struct AppState {
     pub selected_commit_hash: Option<String>,
 
     pub code_lines: Vec<String>,
-    pub cursor_line: usize, // 1-based index
+    pub cursor_line: usize,        // 1-based index
+    pub code_scroll_offset: usize, // 0-based top visible line index
 
     pub status_message: String,
     pub running: bool,
@@ -113,6 +114,7 @@ impl AppState {
 
             code_lines: Vec::new(),
             cursor_line: 1,
+            code_scroll_offset: 0,
 
             status_message: "Press 'Tab' or 'h'/'l' to switch focus. 'm' to change nav mode."
                 .to_string(),
@@ -242,6 +244,7 @@ impl AppState {
                     if let Ok(content) = std::fs::read_to_string(&file_path) {
                         self.code_lines = content.lines().map(|s| s.to_string()).collect();
                         self.cursor_line = 1;
+                        self.code_scroll_offset = 0;
                         self.status_message = format!("Loaded file: {}", f);
                         self.update_current_line_blame();
                     } else {
@@ -257,6 +260,7 @@ impl AppState {
                             if let Ok(content) = repo.get_file_at_commit(hash, clean_path) {
                                 self.code_lines = content.lines().map(|s| s.to_string()).collect();
                                 self.cursor_line = 1;
+                                self.code_scroll_offset = 0;
                                 self.status_message =
                                     format!("Loaded {} at commit {}", clean_path, hash);
                                 self.update_current_line_blame();
@@ -269,6 +273,7 @@ impl AppState {
                     if let Ok(content) = std::fs::read_to_string(&file_path) {
                         self.code_lines = content.lines().map(|s| s.to_string()).collect();
                         self.cursor_line = 1;
+                        self.code_scroll_offset = 0;
                         self.status_message = format!("Loaded modified file: {}", clean_path);
                         self.update_current_line_blame();
                     } else {
@@ -323,6 +328,7 @@ impl AppState {
             Ok(Some(result)) => {
                 self.selected_commit_hash = Some(result.commit_hash);
                 self.code_lines = result.code_lines;
+                self.code_scroll_offset = 0;
                 if self.code_lines.is_empty() {
                     self.cursor_line = 1;
                 } else {
@@ -343,6 +349,26 @@ impl AppState {
             Err(err_msg) => {
                 self.status_message = err_msg;
             }
+        }
+    }
+
+    pub fn ensure_cursor_visible(&mut self, viewport_height: usize) {
+        if self.code_lines.is_empty() || viewport_height == 0 {
+            self.code_scroll_offset = 0;
+            return;
+        }
+
+        let total_lines = self.code_lines.len();
+        let cursor_idx = self.cursor_line.saturating_sub(1);
+
+        if cursor_idx < self.code_scroll_offset {
+            self.code_scroll_offset = cursor_idx;
+        } else if cursor_idx >= self.code_scroll_offset + viewport_height {
+            self.code_scroll_offset = cursor_idx + 1 - viewport_height;
+        }
+
+        if self.code_scroll_offset >= total_lines {
+            self.code_scroll_offset = total_lines.saturating_sub(1);
         }
     }
 
