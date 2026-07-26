@@ -59,10 +59,7 @@ impl TimelineNavigator {
     }
 
     /// Perform a time travel jump for the given repo, file, cursor position, and jump mode.
-    pub fn jump(
-        &self,
-        req: TimelineJumpRequest<'_>,
-    ) -> Result<Option<TimelineJumpResult>, String> {
+    pub fn jump(&self, req: TimelineJumpRequest<'_>) -> Result<Option<TimelineJumpResult>, String> {
         let repo = GitRepo::open(req.repo_path).map_err(|e| e.to_string())?;
 
         let source_code = req.source_lines.join("\n");
@@ -73,9 +70,9 @@ impl TimelineNavigator {
             JumpScope::Commit => repo
                 .get_commit_history(None)
                 .map_err(|e| format!("Failed to get commit history: {:?}", e))?,
-            JumpScope::File => repo
-                .get_file_commits(req.file_path, None)
-                .map_err(|e| format!("Failed to get file commits for {}: {:?}", req.file_path, e))?,
+            JumpScope::File => repo.get_file_commits(req.file_path, None).map_err(|e| {
+                format!("Failed to get file commits for {}: {:?}", req.file_path, e)
+            })?,
             JumpScope::Function => {
                 let range = find_enclosing_function_range(
                     &self.grammar_registry,
@@ -133,7 +130,10 @@ impl TimelineNavigator {
             (None, _) => match req.direction {
                 JumpDirection::Previous => Some(&commits[0]),
                 JumpDirection::Next => {
-                    return Err(format!("Already at latest working state for {}", req.file_path));
+                    return Err(format!(
+                        "Already at latest working state for {}",
+                        req.file_path
+                    ));
                 }
             },
             (Some(_), Some(idx)) => match req.direction {

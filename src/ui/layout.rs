@@ -130,7 +130,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     } else {
                         Style::default()
                     };
-                    ListItem::new(f.as_str()).style(style)
+                    ListItem::new(f.display_string()).style(style)
                 })
                 .collect();
             let list = List::new(items).block(sidebar_block);
@@ -151,13 +151,21 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 .commits
                 .iter()
                 .enumerate()
-                .map(|(i, (hash, msg))| {
-                    let is_candidate = state.candidate_commits.iter().any(|(cand_h, _)| {
-                        hash == cand_h || hash.starts_with(cand_h) || cand_h.starts_with(hash)
-                    });
+                .map(|(i, commit)| {
+                    let is_candidate = state
+                        .candidate_commits
+                        .iter()
+                        .any(|cand| commit.matches_candidate(cand));
 
                     let prefix = if is_candidate { "* " } else { "  " };
-                    let text = format!("{}{} {}", prefix, hash, msg);
+                    let display_hash = if !commit.short_hash.is_empty() {
+                        &commit.short_hash
+                    } else if commit.hash.len() >= 7 {
+                        &commit.hash[..7]
+                    } else {
+                        &commit.hash
+                    };
+                    let text = format!("{}{} {}", prefix, display_hash, commit.message);
 
                     let style = if i == safe_sel && is_sidebar_active {
                         Style::default()
@@ -196,8 +204,15 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 .candidate_commits
                 .iter()
                 .enumerate()
-                .map(|(i, (hash, msg))| {
-                    let text = format!("{} {}", hash, msg);
+                .map(|(i, commit)| {
+                    let display_hash = if !commit.short_hash.is_empty() {
+                        &commit.short_hash
+                    } else if commit.hash.len() >= 7 {
+                        &commit.hash[..7]
+                    } else {
+                        &commit.hash
+                    };
+                    let text = format!("{} {}", display_hash, commit.message);
                     let style = if i == safe_sel && is_sidebar_active {
                         Style::default().bg(Color::Blue).fg(Color::White)
                     } else if i == safe_sel {

@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+mod types;
+pub use types::*;
+
 use crate::git::BlameLine;
 use crate::treesitter::GrammarRegistry;
 use crate::ui::keymap::{Action, Scope};
@@ -79,17 +82,17 @@ pub struct AppState {
     pub files: Vec<String>,
     pub file_selected: usize,
 
-    pub dirty_files: Vec<String>,
+    pub dirty_files: Vec<ModifiedFileEntry>,
     pub dirty_selected: usize,
 
-    pub modified_files: Vec<String>,
+    pub modified_files: Vec<ModifiedFileEntry>,
     pub modified_selected: usize,
 
-    pub uncommitted_files: Vec<String>,
+    pub uncommitted_files: Vec<ModifiedFileEntry>,
 
-    pub commits: Vec<(String, String)>,
+    pub commits: Vec<CommitSummary>,
     pub commit_selected: usize,
-    pub candidate_commits: Vec<(String, String)>,
+    pub candidate_commits: Vec<CommitSummary>,
     pub candidate_selected: usize,
     pub selected_commit_hash: Option<String>,
 
@@ -216,7 +219,7 @@ impl AppState {
                         && self.candidate_selected + 1 < self.candidate_commits.len()
                     {
                         self.candidate_selected += 1;
-                        let (hash, _) = self.candidate_commits[self.candidate_selected].clone();
+                        let hash = self.candidate_commits[self.candidate_selected].hash.clone();
                         self.update_state_for_commit_hash(hash);
                         self.load_currently_selected_file();
                     }
@@ -263,7 +266,7 @@ impl AppState {
                 SidebarView::TargetCandidates => {
                     if self.candidate_selected > 0 {
                         self.candidate_selected -= 1;
-                        let (hash, _) = self.candidate_commits[self.candidate_selected].clone();
+                        let hash = self.candidate_commits[self.candidate_selected].hash.clone();
                         self.update_state_for_commit_hash(hash);
                         self.load_currently_selected_file();
                     }
@@ -331,16 +334,13 @@ impl AppState {
         };
 
         if let Ok(commits) = commits_res {
-            self.candidate_commits = commits
-                .into_iter()
-                .map(|c| (c.short_hash, c.summary))
-                .collect();
+            self.candidate_commits = commits.into_iter().map(CommitSummary::from).collect();
 
             if let Some(hash) = &self.selected_commit_hash {
                 if let Some(idx) = self
                     .candidate_commits
                     .iter()
-                    .position(|(h, _)| h == hash || hash.starts_with(h) || h.starts_with(hash))
+                    .position(|c| c.matches_hash(hash))
                 {
                     self.candidate_selected = idx;
                 } else {
@@ -357,7 +357,7 @@ impl AppState {
             return;
         }
 
-        let (hash, _) = self.commits[self.commit_selected].clone();
+        let hash = self.commits[self.commit_selected].hash.clone();
         self.update_state_for_commit_hash(hash);
     }
 
@@ -365,18 +365,14 @@ impl AppState {
         self.selected_commit_hash = Some(hash.clone());
 
         // Sync commit_selected index in self.commits if hash exists in commit history
-        if let Some(idx) = self
-            .commits
-            .iter()
-            .position(|(h, _)| h == &hash || hash.starts_with(h) || h.starts_with(&hash))
-        {
+        if let Some(idx) = self.commits.iter().position(|c| c.matches_hash(&hash)) {
             self.commit_selected = idx;
         }
 
         if let Some(idx) = self
             .candidate_commits
             .iter()
-            .position(|(h, _)| h == &hash || hash.starts_with(h) || h.starts_with(&hash))
+            .position(|c| c.matches_hash(&hash))
         {
             self.candidate_selected = idx;
         }
@@ -386,15 +382,16 @@ impl AppState {
             if let Ok(commit_files) = repo.get_commit_files(&hash) {
                 self.modified_files = commit_files
                     .into_iter()
-                    .map(|s| format!("{} ({})", s.path, s.status_code().trim()))
+                    .map(ModifiedFileEntry::from)
                     .collect();
 
                 // If current file is in modified_files, set modified_selected to match it
                 if let Some(cur_file) = self.current_file_path() {
-                    if let Some(f_idx) = self.modified_files.iter().position(|item| {
-                        let clean = item.split_whitespace().next().unwrap_or(item);
-                        clean == cur_file
-                    }) {
+                    if let Some(f_idx) = self
+                        .modified_files
+                        .iter()
+                        .position(|item| item.path == cur_file)
+                    {
                         self.modified_selected = f_idx;
                     } else {
                         self.modified_selected = 0;
@@ -423,20 +420,17 @@ impl AppState {
             }
             SidebarView::ModifiedFiles => {
                 if self.selected_commit_hash.is_some() {
-                    if let Some(item) = self.modified_files.get(self.modified_selected).cloned() {
-                        let clean_path = item.split_whitespace().next().unwrap_or(&item);
-                        self.active_file = Some(clean_path.to_string());
+                    if let Some(item) = self.modified_files.get(self.modified_selected) {
+                        self.active_file = Some(item.path.clone());
                     }
-                } else if let Some(item) = self.dirty_files.get(self.dirty_selected).cloned() {
-                    let clean_path = item.split_whitespace().next().unwrap_or(&item);
-                    self.active_file = Some(clean_path.to_string());
+                } else if let Some(item) = self.dirty_files.get(self.dirty_selected) {
+                    self.active_file = Some(item.path.clone());
                 }
             }
             SidebarView::CommitTimeline | SidebarView::TargetCandidates => {
                 if self.active_file.is_none() {
                     if let Some(item) = self.modified_files.get(self.modified_selected) {
-                        let clean_path = item.split_whitespace().next().unwrap_or(item);
-                        self.active_file = Some(clean_path.to_string());
+                        self.active_file = Some(item.path.clone());
                     } else if let Some(f) = self.files.get(self.file_selected) {
                         self.active_file = Some(f.clone());
                     }
@@ -534,16 +528,16 @@ impl AppState {
                 if self.selected_commit_hash.is_some() {
                     self.modified_files
                         .get(self.modified_selected)
-                        .map(|item| item.split_whitespace().next().unwrap_or(item).to_string())
+                        .map(|item| item.path.clone())
                 } else {
                     self.dirty_files
                         .get(self.dirty_selected)
-                        .map(|item| item.split_whitespace().next().unwrap_or(item).to_string())
+                        .map(|item| item.path.clone())
                 }
             }
             SidebarView::CommitTimeline | SidebarView::TargetCandidates => {
                 if let Some(item) = self.modified_files.get(self.modified_selected) {
-                    Some(item.split_whitespace().next().unwrap_or(item).to_string())
+                    Some(item.path.clone())
                 } else {
                     self.files.get(self.file_selected).cloned()
                 }
@@ -861,27 +855,31 @@ impl AppState {
                     self.load_currently_selected_file();
                 }
                 SidebarView::CommitTimeline => {
-                    if let Some((hash, msg)) = self.commits.get(self.commit_selected).cloned() {
-                        self.selected_commit_hash = Some(hash.clone());
+                    if let Some(commit) = self.commits.get(self.commit_selected).cloned() {
+                        self.selected_commit_hash = Some(commit.hash.clone());
                         self.update_modified_files_for_selected_commit();
                         self.sidebar_view = SidebarView::ModifiedFiles;
                         self.load_currently_selected_file();
-                        self.status_message =
-                            format!("Viewing modified files for commit {} ({})", hash, msg);
+                        self.status_message = format!(
+                            "Viewing modified files for commit {} ({})",
+                            commit.short_hash, commit.message
+                        );
                     } else {
                         self.status_message = "No commit selected".to_string();
                     }
                 }
                 SidebarView::TargetCandidates => {
-                    if let Some((hash, msg)) =
+                    if let Some(commit) =
                         self.candidate_commits.get(self.candidate_selected).cloned()
                     {
-                        self.selected_commit_hash = Some(hash.clone());
+                        self.selected_commit_hash = Some(commit.hash.clone());
                         self.update_modified_files_for_selected_commit();
                         self.sidebar_view = SidebarView::ModifiedFiles;
                         self.load_currently_selected_file();
-                        self.status_message =
-                            format!("Viewing candidate commit {} ({})", hash, msg);
+                        self.status_message = format!(
+                            "Viewing candidate commit {} ({})",
+                            commit.short_hash, commit.message
+                        );
                     } else {
                         self.status_message = "No candidate commit selected".to_string();
                     }
@@ -1074,11 +1072,11 @@ mod tests {
             "--- a/main.rs".into(),
             "+++ b/main.rs".into(),
             "@@ -10,3 +10,4 @@".into(),
-            " fn main() {".into(),      // diff line 5 -> line 10
+            " fn main() {".into(),       // diff line 5 -> line 10
             "-    old_line();".into(),   // diff line 6 -> old line 11 (deleted)
             "+    new_line_1();".into(), // diff line 7 -> new line 11 (added)
             "+    new_line_2();".into(), // diff line 8 -> new line 12 (added)
-            " }".into(),                // diff line 9 -> line 13
+            " }".into(),                 // diff line 9 -> line 13
         ];
 
         app.cursor_line = 5;

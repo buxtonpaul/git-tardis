@@ -5,7 +5,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
-use git_tardis::app::AppState;
+use git_tardis::app::{AppState, CommitSummary, ModifiedFileEntry};
 use git_tardis::cli::CliArgs;
 use git_tardis::config::Config;
 use git_tardis::git::GitRepo;
@@ -18,18 +18,13 @@ fn load_repo_data(app: &mut AppState) {
             app.files = files;
         }
         if let Ok(statuses) = repo.get_status() {
-            let items: Vec<String> = statuses
-                .into_iter()
-                .map(|s| format!("{} ({})", s.path, s.status_code()))
-                .collect();
+            let items: Vec<ModifiedFileEntry> =
+                statuses.into_iter().map(ModifiedFileEntry::from).collect();
             app.uncommitted_files = items.clone();
             app.dirty_files = items;
         }
         if let Ok(commits) = repo.get_commit_history(Some(50)) {
-            app.commits = commits
-                .into_iter()
-                .map(|c| (c.hash[..7.min(c.hash.len())].to_string(), c.summary))
-                .collect();
+            app.commits = commits.into_iter().map(CommitSummary::from).collect();
         }
         app.load_currently_selected_file();
     }

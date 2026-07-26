@@ -1,4 +1,4 @@
-use git_tardis::app::{AppState, NavigationMode};
+use git_tardis::app::{AppState, CommitSummary, NavigationMode};
 use git_tardis::git::GitRepo;
 use git_tardis::timeline::{JumpDirection, JumpScope, TimelineJumpRequest, TimelineNavigator};
 use git_tardis::ui::Action;
@@ -302,10 +302,7 @@ fn test_commit_mode_timeline_navigation_and_fallback() {
 
     let mut app = AppState::new(repo.work_dir().to_path_buf());
     app.files = vec!["first.txt".to_string(), "second.txt".to_string()];
-    app.commits = history
-        .into_iter()
-        .map(|c| (c.hash[..7.min(c.hash.len())].to_string(), c.summary))
-        .collect();
+    app.commits = history.into_iter().map(CommitSummary::from).collect();
     app.load_currently_selected_file();
 
     // Initially viewing first.txt
@@ -335,10 +332,7 @@ fn test_commit_timeline_explorer_navigation_reloads_code() {
 
     let mut app = AppState::new(repo.work_dir().to_path_buf());
     app.files = vec!["app.txt".to_string()];
-    app.commits = history
-        .into_iter()
-        .map(|c| (c.hash[..7.min(c.hash.len())].to_string(), c.summary))
-        .collect();
+    app.commits = history.into_iter().map(CommitSummary::from).collect();
     app.sidebar_view = git_tardis::app::SidebarView::CommitTimeline;
     app.file_selected = 0;
     app.load_currently_selected_file();
@@ -373,8 +367,8 @@ fn test_candidate_commits_sidebar_navigation() {
 
     // Candidates in File mode for file_a.txt should only include C3 and C1 (2 commits)
     assert_eq!(app.candidate_commits.len(), 2);
-    assert!(app.candidate_commits[0].1.contains("C3"));
-    assert!(app.candidate_commits[1].1.contains("C1"));
+    assert!(app.candidate_commits[0].message.contains("C3"));
+    assert!(app.candidate_commits[1].message.contains("C1"));
 
     // Navigating down in TargetCandidates switches to candidate 1 (C1)
     app.move_selection_down();
@@ -406,11 +400,11 @@ fn test_changing_selected_file_updates_candidate_commits() {
     assert!(app
         .candidate_commits
         .iter()
-        .any(|(_, msg)| msg.contains("C3")));
+        .any(|c| c.message.contains("C3")));
     assert!(app
         .candidate_commits
         .iter()
-        .any(|(_, msg)| msg.contains("C1")));
+        .any(|c| c.message.contains("C1")));
 
     // Move selection down in FileExplorer to file_b.txt
     app.move_selection_down();
@@ -421,11 +415,11 @@ fn test_changing_selected_file_updates_candidate_commits() {
     assert!(app
         .candidate_commits
         .iter()
-        .any(|(_, msg)| msg.contains("C4")));
+        .any(|c| c.message.contains("C4")));
     assert!(app
         .candidate_commits
         .iter()
-        .any(|(_, msg)| msg.contains("C2")));
+        .any(|c| c.message.contains("C2")));
 }
 
 #[test]
@@ -455,10 +449,7 @@ fn test_code_viewer_focused_navigation_updates_commit_and_code() {
 
     let mut app = AppState::new(repo.work_dir().to_path_buf());
     app.files = vec!["main.rs".to_string()];
-    app.commits = history
-        .into_iter()
-        .map(|c| (c.hash[..7.min(c.hash.len())].to_string(), c.summary))
-        .collect();
+    app.commits = history.into_iter().map(CommitSummary::from).collect();
     app.load_currently_selected_file();
 
     // Toggle focus to CodeViewer
@@ -473,7 +464,7 @@ fn test_code_viewer_focused_navigation_updates_commit_and_code() {
     assert_eq!(app.code_lines, vec!["fn main() { println!(\"v3\"); }"]);
     assert_eq!(app.commit_selected, 0); // Index 0 in commits list is Commit 3
     assert_eq!(app.modified_files.len(), 1);
-    assert!(app.modified_files[0].contains("main.rs"));
+    assert!(app.modified_files[0].path.contains("main.rs"));
 
     // Jump PREV again from CodeViewer scope
     app.dispatch_action(Action::JumpPrevFile);
@@ -503,10 +494,7 @@ fn test_sidebar_commit_list_views_bracket_navigation() {
 
     let mut app = AppState::new(repo.work_dir().to_path_buf());
     app.files = vec!["file_a.txt".to_string(), "file_b.txt".to_string()];
-    app.commits = history
-        .into_iter()
-        .map(|c| (c.hash[..7.min(c.hash.len())].to_string(), c.summary))
-        .collect();
+    app.commits = history.into_iter().map(CommitSummary::from).collect();
     app.file_selected = 0;
     app.load_currently_selected_file();
 
@@ -535,8 +523,8 @@ fn test_sidebar_commit_list_views_bracket_navigation() {
     // 1. In TargetCandidates view in Sidebar (File mode candidates for file_a.txt: C3 and C1)
     app.set_sidebar_view(git_tardis::app::SidebarView::TargetCandidates);
     assert_eq!(app.candidate_commits.len(), 2);
-    assert!(app.candidate_commits[0].1.contains("C3"));
-    assert!(app.candidate_commits[1].1.contains("C1"));
+    assert!(app.candidate_commits[0].message.contains("C3"));
+    assert!(app.candidate_commits[1].message.contains("C1"));
 
     // Press '[' in Sidebar -> JumpPrevAuto in File mode -> jumps to C3
     app.dispatch_action(Action::JumpPrevAuto);

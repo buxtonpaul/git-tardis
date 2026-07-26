@@ -135,7 +135,9 @@ pub fn resolve_file_line_number(code_lines: &[String], cursor_line: usize) -> us
     let mut current_new_line = 1;
     let mut in_hunk = false;
 
-    let target_idx = cursor_line.saturating_sub(1).min(code_lines.len().saturating_sub(1));
+    let target_idx = cursor_line
+        .saturating_sub(1)
+        .min(code_lines.len().saturating_sub(1));
 
     for (idx, line) in code_lines.iter().enumerate() {
         if line.starts_with("@@ ") {
@@ -245,7 +247,11 @@ index 1234567..89abcde 100644
 
     #[test]
     fn test_resolve_file_line_number_regular_code() {
-        let lines = vec!["fn main() {".into(), "    println!(\"hi\");".into(), "}".into()];
+        let lines = vec![
+            "fn main() {".into(),
+            "    println!(\"hi\");".into(),
+            "}".into(),
+        ];
         assert_eq!(resolve_file_line_number(&lines, 1), 1);
         assert_eq!(resolve_file_line_number(&lines, 2), 2);
         assert_eq!(resolve_file_line_number(&lines, 3), 3);
@@ -255,14 +261,14 @@ index 1234567..89abcde 100644
     fn test_resolve_file_line_number_diff_text() {
         let diff_lines: Vec<String> = vec![
             "diff --git a/main.rs b/main.rs", // 1
-            "index 1234567..89abcde 100644",   // 2
+            "index 1234567..89abcde 100644",  // 2
             "--- a/main.rs",                  // 3
             "+++ b/main.rs",                  // 4
             "@@ -10,3 +10,4 @@",              // 5
             " line 10",                       // 6 (context line -> new 10, old 10)
-            "-deleted line 11",                // 7 (deleted line -> old 11)
-            "+added line 11",                  // 8 (added line -> new 11)
-            "+added line 12",                  // 9 (added line -> new 12)
+            "-deleted line 11",               // 7 (deleted line -> old 11)
+            "+added line 11",                 // 8 (added line -> new 11)
+            "+added line 12",                 // 9 (added line -> new 12)
             " line 13",                       // 10 (context line -> new 13, old 12)
         ]
         .into_iter()

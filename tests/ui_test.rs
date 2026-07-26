@@ -1,4 +1,4 @@
-use git_tardis::app::{ActivePanel, AppState, NavigationMode, SidebarView};
+use git_tardis::app::{ActivePanel, AppState, CommitSummary, NavigationMode, SidebarView};
 use git_tardis::config::Config;
 use git_tardis::ui::{render, Action, KeyDispatcher, KeyStroke, KeymapRegistry, Scope};
 use ratatui::style::Color;
@@ -12,8 +12,8 @@ fn test_split_panel_rendering_and_borders() {
 
     let mut app = AppState::new(PathBuf::from("."));
     app.files = vec!["src/main.rs".to_string(), "Cargo.toml".to_string()];
-    app.modified_files = vec!["src/main.rs (M)".to_string()];
-    app.commits = vec![("a1b2c3d".to_string(), "feat: initial commit".to_string())];
+    app.modified_files = vec!["src/main.rs (M)".into()];
+    app.commits = vec![("a1b2c3d", "feat: initial commit").into()];
     app.code_lines = vec![
         "fn main() {".to_string(),
         "    println!(\"Hello\");".to_string(),
@@ -54,8 +54,8 @@ fn test_sidebar_tab_views_rendering() {
 
     let mut app = AppState::new(PathBuf::from("."));
     app.files = vec!["file1.rs".to_string()];
-    app.dirty_files = vec!["mod1.rs (M)".to_string()];
-    app.commits = vec![("1234567".to_string(), "commit message".to_string())];
+    app.dirty_files = vec!["mod1.rs (M)".into()];
+    app.commits = vec![("1234567", "commit message").into()];
 
     // Tab 1: Explorer
     app.set_sidebar_view(SidebarView::FileExplorer);
@@ -77,7 +77,7 @@ fn test_sidebar_tab_views_rendering() {
 
     // Tab 4: Target Candidates
     app.set_sidebar_view(SidebarView::TargetCandidates);
-    app.candidate_commits = vec![("7654321".to_string(), "candidate commit".to_string())];
+    app.candidate_commits = vec![("7654321", "candidate commit").into()];
     terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg4 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg4.contains("7654321 candidate commit"));
@@ -210,19 +210,19 @@ fn test_commit_selection_updates_modified_files() {
     let history = repo.get_commit_history(Some(10)).unwrap();
 
     let mut app = AppState::new(repo_path.to_path_buf());
-    app.commits = history.into_iter().map(|c| (c.hash, c.summary)).collect();
+    app.commits = history.into_iter().map(CommitSummary::from).collect();
 
     // Highlight commit 0 (Second commit file_b)
     app.commit_selected = 0;
     app.update_modified_files_for_selected_commit();
     assert_eq!(app.modified_files.len(), 1);
-    assert!(app.modified_files[0].contains("file_b.txt"));
+    assert!(app.modified_files[0].path.contains("file_b.txt"));
 
     // Highlight commit 1 (First commit file_a)
     app.commit_selected = 1;
     app.update_modified_files_for_selected_commit();
     assert_eq!(app.modified_files.len(), 1);
-    assert!(app.modified_files[0].contains("file_a.txt"));
+    assert!(app.modified_files[0].path.contains("file_a.txt"));
 }
 
 #[test]
@@ -279,7 +279,7 @@ fn test_auto_update_code_viewer_on_modified_files_navigation() {
 
     let mut app = AppState::new(repo_path.to_path_buf());
     app.set_sidebar_view(SidebarView::ModifiedFiles);
-    app.dirty_files = vec!["file_a.txt (M)".to_string(), "file_b.txt (M)".to_string()];
+    app.dirty_files = vec!["file_a.txt (M)".into(), "file_b.txt (M)".into()];
     app.load_currently_selected_file();
     assert_eq!(app.code_lines, vec!["Modified A"]);
 
@@ -325,7 +325,8 @@ fn test_historical_commit_modified_files_auto_update() {
     app.commits = vec![(
         first_commit_hash[..7].to_string(),
         "First commit".to_string(),
-    )];
+    )
+        .into()];
 
     // Select the commit from timeline (Action::Select on CommitTimeline)
     app.set_sidebar_view(SidebarView::CommitTimeline);
@@ -573,10 +574,10 @@ fn test_commit_timeline_candidate_highlighting() {
 
     let mut app = AppState::new(PathBuf::from("."));
     app.commits = vec![
-        ("1111111".to_string(), "Candidate Commit".to_string()),
-        ("2222222".to_string(), "Non-candidate Commit".to_string()),
+        ("1111111", "Candidate Commit").into(),
+        ("2222222", "Non-candidate Commit").into(),
     ];
-    app.candidate_commits = vec![("1111111".to_string(), "Candidate Commit".to_string())];
+    app.candidate_commits = vec![("1111111", "Candidate Commit").into()];
     app.sidebar_view = SidebarView::CommitTimeline;
 
     terminal.draw(|f| render(f, &mut app)).unwrap();
