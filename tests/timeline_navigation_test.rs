@@ -1,6 +1,6 @@
 use git_tardis::app::{AppState, NavigationMode};
 use git_tardis::git::GitRepo;
-use git_tardis::timeline::{JumpDirection, JumpScope, TimelineNavigator};
+use git_tardis::timeline::{JumpDirection, JumpScope, TimelineJumpRequest, TimelineNavigator};
 use git_tardis::ui::Action;
 use std::fs;
 use std::process::Command;
@@ -274,15 +274,15 @@ fn test_timeline_navigator_direct_api() {
 
     let nav = TimelineNavigator::new();
     let res = nav
-        .jump(
-            repo.work_dir(),
-            "foo.txt",
-            &["v2".to_string()],
-            1,
-            None,
-            JumpScope::File,
-            JumpDirection::Previous,
-        )
+        .jump(TimelineJumpRequest {
+            repo_path: repo.work_dir(),
+            file_path: "foo.txt",
+            source_lines: &["v2".to_string()],
+            cursor_line: 1,
+            current_commit_hash: None,
+            scope: JumpScope::File,
+            direction: JumpDirection::Previous,
+        })
         .unwrap()
         .unwrap();
 

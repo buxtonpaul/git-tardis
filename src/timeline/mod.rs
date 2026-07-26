@@ -18,6 +18,17 @@ pub enum JumpDirection {
     Previous,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct TimelineJumpRequest<'a> {
+    pub repo_path: &'a Path,
+    pub file_path: &'a str,
+    pub source_lines: &'a [String],
+    pub cursor_line: usize,
+    pub current_commit_hash: Option<&'a str>,
+    pub scope: JumpScope,
+    pub direction: JumpDirection,
+}
+
 #[derive(Debug, Clone)]
 pub struct TimelineJumpResult {
     pub commit_hash: String,
@@ -50,61 +61,55 @@ impl TimelineNavigator {
     /// Perform a time travel jump for the given repo, file, cursor position, and jump mode.
     pub fn jump(
         &self,
-        repo_path: &Path,
-        file_path: &str,
-        source_lines: &[String],
-        cursor_line: usize,
-        current_commit_hash: Option<&str>,
-        scope: JumpScope,
-        direction: JumpDirection,
+        req: TimelineJumpRequest<'_>,
     ) -> Result<Option<TimelineJumpResult>, String> {
-        let repo = GitRepo::open(repo_path).map_err(|e| e.to_string())?;
+        let repo = GitRepo::open(req.repo_path).map_err(|e| e.to_string())?;
 
-        let source_code = source_lines.join("\n");
+        let source_code = req.source_lines.join("\n");
         let mut function_range: Option<(usize, usize)> = None;
 
         // 1. Fetch relevant commit history for the requested scope
-        let commits = match scope {
+        let commits = match req.scope {
             JumpScope::Commit => repo
                 .get_commit_history(None)
                 .map_err(|e| format!("Failed to get commit history: {:?}", e))?,
             JumpScope::File => repo
-                .get_file_commits(file_path, None)
-                .map_err(|e| format!("Failed to get file commits for {}: {:?}", file_path, e))?,
+                .get_file_commits(req.file_path, None)
+                .map_err(|e| format!("Failed to get file commits for {}: {:?}", req.file_path, e))?,
             JumpScope::Function => {
                 let range = find_enclosing_function_range(
                     &self.grammar_registry,
-                    file_path,
+                    req.file_path,
                     &source_code,
-                    cursor_line,
+                    req.cursor_line,
                 )
                 .map_err(|e| format!("Tree-sitter error: {}", e))?;
 
                 match range {
                     Some((start_l, end_l)) => {
                         function_range = Some((start_l, end_l));
-                        repo.get_line_commits(file_path, start_l, end_l, None)
+                        repo.get_line_commits(req.file_path, start_l, end_l, None)
                             .map_err(|e| {
                                 format!(
                                     "Failed to get function commits ({}-{}) for {}: {:?}",
-                                    start_l, end_l, file_path, e
+                                    start_l, end_l, req.file_path, e
                                 )
                             })?
                     }
                     None => {
                         return Err(format!(
                             "No enclosing function found at line {} in {}",
-                            cursor_line, file_path
+                            req.cursor_line, req.file_path
                         ));
                     }
                 }
             }
             JumpScope::Line => repo
-                .get_line_commits(file_path, cursor_line, cursor_line, None)
+                .get_line_commits(req.file_path, req.cursor_line, req.cursor_line, None)
                 .map_err(|e| {
                     format!(
                         "Failed to get line commits for line {} in {}: {:?}",
-                        cursor_line, file_path, e
+                        req.cursor_line, req.file_path, e
                     )
                 })?,
         };
@@ -112,33 +117,33 @@ impl TimelineNavigator {
         if commits.is_empty() {
             return Err(format!(
                 "No commit history found for {} in {:?} scope",
-                file_path, scope
+                req.file_path, req.scope
             ));
         }
 
         // 2. Locate position in commit list based on current_commit_hash
-        let current_idx = current_commit_hash.and_then(|hash| {
+        let current_idx = req.current_commit_hash.and_then(|hash| {
             commits.iter().position(|c| {
                 c.hash == hash || c.short_hash == hash || hash.starts_with(&c.short_hash)
             })
         });
 
         // 3. Determine target commit index or return to working copy
-        let target_commit_info = match (current_commit_hash, current_idx) {
-            (None, _) => match direction {
+        let target_commit_info = match (req.current_commit_hash, current_idx) {
+            (None, _) => match req.direction {
                 JumpDirection::Previous => Some(&commits[0]),
                 JumpDirection::Next => {
-                    return Err(format!("Already at latest working state for {}", file_path));
+                    return Err(format!("Already at latest working state for {}", req.file_path));
                 }
             },
-            (Some(_), Some(idx)) => match direction {
+            (Some(_), Some(idx)) => match req.direction {
                 JumpDirection::Previous => {
                     if idx + 1 < commits.len() {
                         Some(&commits[idx + 1])
                     } else {
                         return Err(format!(
                             "Already at oldest commit in {:?} timeline for {}",
-                            scope, file_path
+                            req.scope, req.file_path
                         ));
                     }
                 }
@@ -151,7 +156,7 @@ impl TimelineNavigator {
                     }
                 }
             },
-            (Some(_), None) => match direction {
+            (Some(_), None) => match req.direction {
                 JumpDirection::Previous => Some(&commits[0]),
                 JumpDirection::Next => None,
             },
@@ -164,13 +169,13 @@ impl TimelineNavigator {
         };
 
         // 4. Load file contents at target commit (fallback to first modified file if file didn't exist in Commit scope)
-        let mut target_file_path = file_path.to_string();
-        let content = match repo.get_file_at_commit(&target_commit.hash, file_path) {
+        let mut target_file_path = req.file_path.to_string();
+        let content = match repo.get_file_at_commit(&target_commit.hash, req.file_path) {
             Ok(content) => content,
             Err(e) => {
-                if scope == JumpScope::Commit {
+                if req.scope == JumpScope::Commit {
                     let commit_files = repo.get_commit_files(&target_commit.hash).map_err(|cf_err| {
-                        format!("Failed to read file {} at commit {}: {:?} (failed fetching commit files: {:?})", file_path, target_commit.short_hash, e, cf_err)
+                        format!("Failed to read file {} at commit {}: {:?} (failed fetching commit files: {:?})", req.file_path, target_commit.short_hash, e, cf_err)
                     })?;
                     if let Some(first) =
                         commit_files.iter().find(|f| !f.status_code().contains('D'))
@@ -186,13 +191,13 @@ impl TimelineNavigator {
                     } else {
                         return Err(format!(
                             "File {} did not exist at commit {}, and no valid modified file found",
-                            file_path, target_commit.short_hash
+                            req.file_path, target_commit.short_hash
                         ));
                     }
                 } else {
                     return Err(format!(
                         "Failed to read file {} at commit {}: {:?}",
-                        file_path, target_commit.short_hash, e
+                        req.file_path, target_commit.short_hash, e
                     ));
                 }
             }
@@ -200,7 +205,7 @@ impl TimelineNavigator {
 
         let code_lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 
-        let scope_desc = match scope {
+        let scope_desc = match req.scope {
             JumpScope::Commit => "COMMIT".to_string(),
             JumpScope::File => "FILE".to_string(),
             JumpScope::Function => {
@@ -210,10 +215,10 @@ impl TimelineNavigator {
                     "FUNCTION".to_string()
                 }
             }
-            JumpScope::Line => format!("LINE {}", cursor_line),
+            JumpScope::Line => format!("LINE {}", req.cursor_line),
         };
 
-        let dir_desc = match direction {
+        let dir_desc = match req.direction {
             JumpDirection::Previous => "PREVIOUS",
             JumpDirection::Next => "NEXT",
         };
@@ -230,7 +235,7 @@ impl TimelineNavigator {
             file_path: target_file_path,
             code_lines,
             status_message,
-            scope,
+            scope: req.scope,
             line_range: function_range,
         }))
     }

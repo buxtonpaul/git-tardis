@@ -561,15 +561,15 @@ impl AppState {
         };
 
         let navigator = crate::timeline::TimelineNavigator::new();
-        match navigator.jump(
-            &self.repo_path,
-            &file_path,
-            &self.code_lines,
-            self.cursor_line,
-            self.selected_commit_hash.as_deref(),
+        match navigator.jump(crate::timeline::TimelineJumpRequest {
+            repo_path: &self.repo_path,
+            file_path: &file_path,
+            source_lines: &self.code_lines,
+            cursor_line: self.cursor_line,
+            current_commit_hash: self.selected_commit_hash.as_deref(),
             scope,
             direction,
-        ) {
+        }) {
             Ok(Some(result)) => {
                 self.update_state_for_commit_hash(result.commit_hash);
                 self.active_file = Some(result.file_path);
