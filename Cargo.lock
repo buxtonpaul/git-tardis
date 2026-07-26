@@ -724,7 +724,7 @@ dependencies = [
  "tree-sitter-go",
  "tree-sitter-lua",
  "tree-sitter-python",
- "tree-sitter-rust 0.23.3",
+ "tree-sitter-rust",
  "tree-sitter-typescript",
 ]
 
@@ -882,15 +882,6 @@ dependencies = [
  "hashbrown 0.16.1",
  "portable-atomic",
  "thiserror 2.0.19",
-]
-
-[[package]]
-name = "keybindings-poc"
-version = "0.1.0"
-dependencies = [
- "crossterm 0.28.1",
- "serde",
- "toml",
 ]
 
 [[package]]
@@ -1384,14 +1375,6 @@ dependencies = [
  "crossterm 0.29.0",
  "instability",
  "ratatui-core",
-]
-
-[[package]]
-name = "ratatui-layout-poc"
-version = "0.1.0"
-dependencies = [
- "crossterm 0.29.0",
- "ratatui",
 ]
 
 [[package]]
@@ -2040,18 +2023,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tree-sitter-extensibility-poc"
-version = "0.1.0"
-dependencies = [
- "libloading",
- "serde",
- "toml",
- "tree-sitter",
- "tree-sitter-python",
- "tree-sitter-rust 0.24.2",
-]
-
-[[package]]
 name = "tree-sitter-go"
 version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2078,17 +2049,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tree-sitter-poc"
-version = "0.1.0"
-dependencies = [
- "tree-sitter",
- "tree-sitter-go",
- "tree-sitter-python",
- "tree-sitter-rust 0.24.2",
- "tree-sitter-typescript",
-]
-
-[[package]]
 name = "tree-sitter-python"
 version = "0.23.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2103,16 +2063,6 @@ name = "tree-sitter-rust"
 version = "0.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca8ccb3e3a3495c8a943f6c3fd24c3804c471fd7f4f16087623c7fa4c0068e8a"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-rust"
-version = "0.24.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "439e577dbe07423ec2582ac62c7531120dbfccfa6e5f92406f93dd271a120e45"
 dependencies = [
  "cc",
  "tree-sitter-language",

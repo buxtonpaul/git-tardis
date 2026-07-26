@@ -15,19 +15,18 @@ A tool for time travelling through your git repositories, allowing you to naviga
 
 ## Technical Specifications & Research
 
-The design and architecture of Git-tardis are backed by validated proofs of concept and technical specifications:
+The design and architecture of Git-tardis are backed by validated proofs of concept and technical specifications (see [docs/technical-specification.md](docs/technical-specification.md) for full architectural specs and historical commit references):
 
+### Active Proofs-of-Concept & Research
 | Focus Area | Specification Document | Proof-of-Concept | Key Decision / Outcome |
 | :--- | :--- | :--- | :--- |
-| **Neovim RPC Integration** | [`docs/research/neovim-rpc-terminal-integration.md`](docs/research/neovim-rpc-terminal-integration.md) | [`research/neovim-rpc-poc/`](research/neovim-rpc-poc/) | Bidirectional socket loop via `nvim-rs` + Tokio, using `BufWipeout` autocommands for cleanup. |
-| **Tree-sitter Enclosing Scope** | [`docs/research/tree-sitter-function-parsing.md`](docs/research/tree-sitter-function-parsing.md) | [`tree-sitter-poc/`](research/tree-sitter-poc/) | Dynamic cursor point matching with bottom-up AST traversal across Rust, Go, Python, and TS. |
-| **Ratatui Sidebar & Navigation** | [`docs/research/ratatui-sidebar-layout.md`](docs/research/ratatui-sidebar-layout.md) | [`ratatui-layout-poc/`](research/ratatui-layout-poc/) | Monolithic state model with percentage horizontal splits and scope-routed key events. |
-| **Interactive Rebase Engine** | [`docs/research/interactive-rebase-modifications.md`](docs/research/interactive-rebase-modifications.md) | [`interactive-rebase-poc/`](research/interactive-rebase-poc/) | Non-interactive fixup rebases vs `GIT_SEQUENCE_EDITOR` marked edits with TUI suspension loops. |
+| **Interactive Rebase Engine** | [`docs/research/interactive-rebase-modifications.md`](docs/research/interactive-rebase-modifications.md) | [`research/interactive-rebase-poc/`](research/interactive-rebase-poc/) | Non-interactive fixup rebases vs `GIT_SEQUENCE_EDITOR` marked edits with TUI suspension loops. |
 | **Conflict Resolution Flow** | [`docs/research/conflict-detection-and-resolution.md`](docs/research/conflict-detection-and-resolution.md) | Integrated in rebase PoC | Fail-fast auto-abort with autostash recovery for inline edits; subshell delegation for edit-here. |
-| **Neovim Lua Plugin Launcher** | [`docs/research/neovim-plugin-launcher-packaging.md`](docs/research/neovim-plugin-launcher-packaging.md) | [`neovim-plugin-poc/`](research/neovim-plugin-poc/) | `git-tardis.nvim` floating window wrapper passing `$NVIM` environment variable. |
-| **Syntax Highlighting Engine** | [`docs/research/syntax-highlighting-performance.md`](docs/research/syntax-highlighting-performance.md) | [`syntax-highlighting-poc/`](research/syntax-highlighting-poc/) | Tree-sitter query highlighting (~4.5x–10x faster than `syntect`), viewport cropping, span merging (60% reduction), and Neovim RPC theme syncing. |
-| **Tree-sitter Extensibility** | [`docs/research/tree-sitter-grammar-extensibility.md`](docs/research/tree-sitter-grammar-extensibility.md) | [`tree-sitter-extensibility-poc/`](research/tree-sitter-extensibility-poc/) | Hybrid architecture combining static built-ins with dynamic `libloading` shared objects (`.so`/`.dylib`), TOML/Lua configs, and graceful mode fallbacks. |
-| **Configurable Keybindings** | [`docs/research/configurable-keybindings.md`](docs/research/configurable-keybindings.md) | [`keybindings-poc/`](research/keybindings-poc/) | Hierarchical keymap scope routing (`global`, `sidebar`, `code_viewer`), multi-key sequence matching (`]f`, `]l`, `]m`), TOML/Lua setup overrides, and mode shortcuts. |
+| **Neovim RPC Integration** | [`docs/research/neovim-rpc-terminal-integration.md`](docs/research/neovim-rpc-terminal-integration.md) | [`research/neovim-rpc-poc/`](research/neovim-rpc-poc/) | Bidirectional socket loop via `nvim-rs` + Tokio, using `BufWipeout` autocommands for cleanup. |
+| **Neovim Lua Plugin Launcher** | [`docs/research/neovim-plugin-launcher-packaging.md`](docs/research/neovim-plugin-launcher-packaging.md) | [`research/neovim-plugin-poc/`](research/neovim-plugin-poc/) | `git-tardis.nvim` floating window wrapper passing `$NVIM` environment variable. |
+
+### Completed Features (Integrated into Main Crate)
+The research PoCs for keybindings, layout, syntax highlighting, and tree-sitter scope locators have been fully implemented in `src/` and removed from the active working tree. See [Section 9.1 of the Technical Specification](docs/technical-specification.md#91-historical-research--proof-of-concept-code-references) for historical Git commit hashes (`5fce52e`, `50c9b77`, `4ac3ab7`, `c5319d0`, `43f017b`).
 
 ---
 
