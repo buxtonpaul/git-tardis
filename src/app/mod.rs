@@ -225,6 +225,7 @@ impl AppState {
             ActivePanel::CodeViewer => {
                 if !self.code_lines.is_empty() && self.cursor_line < self.code_lines.len() {
                     self.cursor_line += 1;
+                    self.ensure_cursor_visible(self.code_viewport_height);
                     self.update_current_line_blame();
                     self.update_candidate_commits();
                 }
@@ -271,6 +272,7 @@ impl AppState {
             ActivePanel::CodeViewer => {
                 if self.cursor_line > 1 {
                     self.cursor_line -= 1;
+                    self.ensure_cursor_visible(self.code_viewport_height);
                     self.update_current_line_blame();
                     self.update_candidate_commits();
                 }
@@ -1025,5 +1027,34 @@ mod tests {
 
         app.move_selection_up();
         assert_eq!(app.file_selected, 0); // Clamp at 0
+    }
+
+    #[test]
+    fn test_code_viewer_move_selection_updates_viewport_scroll() {
+        let mut app = AppState::new(PathBuf::from("."));
+        app.active_panel = ActivePanel::CodeViewer;
+        app.code_lines = (1..=30).map(|i| format!("line {}", i)).collect();
+        app.code_viewport_height = 10;
+        app.scrolloff = 2;
+
+        assert_eq!(app.cursor_line, 1);
+        assert_eq!(app.code_scroll_offset, 0);
+
+        // Move down past viewport height
+        for _ in 0..15 {
+            app.move_selection_down();
+        }
+        assert_eq!(app.cursor_line, 16);
+        // Scrolloff = 2, so offset should update automatically on move_selection_down
+        assert!(app.code_scroll_offset > 0);
+
+        let scrolled_offset = app.code_scroll_offset;
+
+        // Move back up
+        for _ in 0..10 {
+            app.move_selection_up();
+        }
+        assert_eq!(app.cursor_line, 6);
+        assert!(app.code_scroll_offset < scrolled_offset);
     }
 }
