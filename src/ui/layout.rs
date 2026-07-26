@@ -1,8 +1,8 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Tabs},
     Frame,
 };
 
@@ -420,13 +420,90 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     // 3. Footer Status Bar
     let status_text = format!(
-        " Status: {} | Keys: [Tab] Switch Panel | [1/2/3/4] Sidebar View | [m] Nav Mode | [q] Quit",
+        " Status: {} | Keys: [?] Help | [Tab] Switch Panel | [1/2/3/4] Sidebar View | [m] Nav Mode | [q] Quit",
         state.status_message
     );
     let status_bar = Paragraph::new(status_text)
         .block(Block::default().borders(Borders::ALL).title(" Controls "))
         .style(Style::default().fg(Color::Green));
     frame.render_widget(status_bar, chunks[2]);
+
+    // 4. Keybindings Help Overlay Popup
+    if state.show_help {
+        let area = centered_rect(80, 88, frame.area());
+        frame.render_widget(Clear, area);
+
+        let help_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Keybindings Help (?) ")
+            .border_style(Style::default().fg(Color::Yellow));
+
+        let help_lines = vec![
+            Line::from(vec![Span::styled(
+                "--- Global Shortcuts ---",
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            )]),
+            Line::from("  ?               Toggle Keybindings Help Screen"),
+            Line::from("  <Tab> / h / l   Switch Focus between Sidebar and Code Viewer"),
+            Line::from(
+                "  1 / 2 / 3 / 4   Switch Sidebar View (1: Explorer, 2: Modified, 3: Timeline, 4: Candidates)",
+            ),
+            Line::from("  m               Cycle Navigation Mode (Commit, File, Function, Line)"),
+            Line::from("  q / <Esc>       Close Help / Reset Time Travel / Exit Application"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "--- Sidebar Navigation ---",
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            )]),
+            Line::from("  j / k / Down / Up   Move selection down / up"),
+            Line::from("  <CR> / l            Select file / Toggle folder expansion"),
+            Line::from("  <Right>             Expand folder / Step down to child"),
+            Line::from("  <Left> / h          Collapse folder / Jump to parent folder"),
+            Line::from("  <Space>             Toggle folder fold/unfold"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "--- Code Viewer & Time Travel ---",
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            )]),
+            Line::from("  j / k / Down / Up   Move line cursor down / up"),
+            Line::from("  ] / [               Jump to Next / Previous historical commit"),
+            Line::from("  <C-d> / <C-u>       Half page scroll down / up"),
+            Line::from("  <C-f> / <C-b>       Page scroll down / up"),
+            Line::from("  <C-e> / <C-y>       Scroll single line down / up"),
+            Line::from("  zz / zt / zb        Center cursor / Cursor top / Cursor bottom"),
+            Line::from("  e / E               Trigger Inline Rewrite / Edit Here"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Press '?' or 'Esc' to close this help window",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )]),
+        ];
+
+        let help_paragraph = Paragraph::new(help_lines).block(help_block);
+        frame.render_widget(help_paragraph, area);
+    }
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
 
 #[cfg(test)]

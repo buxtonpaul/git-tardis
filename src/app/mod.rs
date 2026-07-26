@@ -110,6 +110,7 @@ pub struct AppState {
 
     pub status_message: String,
     pub running: bool,
+    pub show_help: bool,
 
     pub grammar_registry: GrammarRegistry,
     pub current_line_blame: Option<BlameLine>,
@@ -154,9 +155,10 @@ impl AppState {
             sidebar_viewport_height: 20,
             scrolloff: 3,
 
-            status_message: "Press 'Tab' or 'h'/'l' to switch focus. 'm' to change nav mode."
+            status_message: "Press 'Tab' or 'h'/'l' to switch focus. '?' for help. 'm' for nav mode."
                 .to_string(),
             running: true,
+            show_help: false,
 
             grammar_registry: GrammarRegistry::new(),
             current_line_blame: None,
@@ -983,10 +985,21 @@ impl AppState {
     pub fn dispatch_action(&mut self, action: Action) {
         match action {
             Action::Quit => {
-                if self.selected_commit_hash.is_some() {
+                if self.show_help {
+                    self.show_help = false;
+                    self.status_message = "Closed keybindings help overlay.".to_string();
+                } else if self.selected_commit_hash.is_some() {
                     self.reset_time_travel();
                 } else {
                     self.quit();
+                }
+            }
+            Action::ToggleHelp => {
+                self.show_help = !self.show_help;
+                if self.show_help {
+                    self.status_message = "Opened keybindings help overlay.".to_string();
+                } else {
+                    self.status_message = "Closed keybindings help overlay.".to_string();
                 }
             }
             Action::ToggleFocus => self.toggle_panel_focus(),
