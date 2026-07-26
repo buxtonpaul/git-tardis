@@ -116,6 +116,84 @@ pub fn parse_file_diff_hunks(diff_text: &str) -> HashMap<usize, DiffLineType> {
     highlights
 }
 
+/// Helper to map a cursor line index within `code_lines` (which may be a unified diff or regular file content)
+/// to the corresponding 1-based target line number in the actual file.
+pub fn resolve_file_line_number(code_lines: &[String], cursor_line: usize) -> usize {
+    if cursor_line == 0 || code_lines.is_empty() {
+        return cursor_line;
+    }
+
+    // Check if code_lines appears to be unified diff output
+    let is_diff = code_lines
+        .iter()
+        .any(|l| l.starts_with("@@ ") || l.starts_with("diff --git "));
+    if !is_diff {
+        return cursor_line;
+    }
+
+    let mut current_old_line = 1;
+    let mut current_new_line = 1;
+    let mut in_hunk = false;
+
+    let target_idx = cursor_line.saturating_sub(1).min(code_lines.len().saturating_sub(1));
+
+    for (idx, line) in code_lines.iter().enumerate() {
+        if line.starts_with("@@ ") {
+            if let Some((old_start, _, new_start, _)) = parse_hunk_header(line) {
+                current_old_line = old_start;
+                current_new_line = new_start;
+                in_hunk = true;
+                if idx == target_idx {
+                    return current_new_line;
+                }
+                continue;
+            }
+        }
+
+        if !in_hunk {
+            if idx == target_idx {
+                return 1;
+            }
+            continue;
+        }
+
+        if line.starts_with("diff ") || line.starts_with("index ") {
+            in_hunk = false;
+            if idx == target_idx {
+                return current_new_line;
+            }
+            continue;
+        }
+
+        if line.starts_with('-') && !line.starts_with("---") {
+            // Deleted line: returns the pre-image line number before deletion
+            if idx == target_idx {
+                return current_old_line;
+            }
+            current_old_line += 1;
+        } else if line.starts_with('+') && !line.starts_with("+++") {
+            // Added line: returns the post-image line number
+            if idx == target_idx {
+                return current_new_line;
+            }
+            current_new_line += 1;
+        } else if line.starts_with('\\') {
+            if idx == target_idx {
+                return current_new_line;
+            }
+        } else {
+            // Context line
+            if idx == target_idx {
+                return current_new_line;
+            }
+            current_old_line += 1;
+            current_new_line += 1;
+        }
+    }
+
+    current_new_line
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +241,49 @@ index 1234567..89abcde 100644
         assert_eq!(highlights.get(&2), Some(&DiffLineType::Modified));
         assert_eq!(highlights.get(&3), Some(&DiffLineType::Added));
         assert_eq!(highlights.get(&4), None); // Context
+    }
+
+    #[test]
+    fn test_resolve_file_line_number_regular_code() {
+        let lines = vec!["fn main() {".into(), "    println!(\"hi\");".into(), "}".into()];
+        assert_eq!(resolve_file_line_number(&lines, 1), 1);
+        assert_eq!(resolve_file_line_number(&lines, 2), 2);
+        assert_eq!(resolve_file_line_number(&lines, 3), 3);
+    }
+
+    #[test]
+    fn test_resolve_file_line_number_diff_text() {
+        let diff_lines: Vec<String> = vec![
+            "diff --git a/main.rs b/main.rs", // 1
+            "index 1234567..89abcde 100644",   // 2
+            "--- a/main.rs",                  // 3
+            "+++ b/main.rs",                  // 4
+            "@@ -10,3 +10,4 @@",              // 5
+            " line 10",                       // 6 (context line -> new 10, old 10)
+            "-deleted line 11",                // 7 (deleted line -> old 11)
+            "+added line 11",                  // 8 (added line -> new 11)
+            "+added line 12",                  // 9 (added line -> new 12)
+            " line 13",                       // 10 (context line -> new 13, old 12)
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+
+        // Header lines default to valid line 1
+        assert_eq!(resolve_file_line_number(&diff_lines, 1), 1);
+        assert_eq!(resolve_file_line_number(&diff_lines, 5), 10);
+
+        // Context line 10
+        assert_eq!(resolve_file_line_number(&diff_lines, 6), 10);
+
+        // Deleted line -> old line 11
+        assert_eq!(resolve_file_line_number(&diff_lines, 7), 11);
+
+        // Added lines -> new line 11, 12
+        assert_eq!(resolve_file_line_number(&diff_lines, 8), 11);
+        assert_eq!(resolve_file_line_number(&diff_lines, 9), 12);
+
+        // Context line 13
+        assert_eq!(resolve_file_line_number(&diff_lines, 10), 13);
     }
 }

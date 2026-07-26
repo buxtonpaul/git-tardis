@@ -304,11 +304,12 @@ impl AppState {
             NavigationMode::Function => {
                 if let Some(f) = &cur_file {
                     let source_code = self.code_lines.join("\n");
+                    let effective_line = self.effective_cursor_line();
                     let range = crate::treesitter::scope::find_enclosing_function_range(
                         &self.grammar_registry,
                         f,
                         &source_code,
-                        self.cursor_line,
+                        effective_line,
                     );
                     if let Ok(Some((start_l, end_l))) = range {
                         repo.get_line_commits(f, start_l, end_l, None)
@@ -321,7 +322,8 @@ impl AppState {
             }
             NavigationMode::Line => {
                 if let Some(f) = &cur_file {
-                    repo.get_line_commits(f, self.cursor_line, self.cursor_line, None)
+                    let effective_line = self.effective_cursor_line();
+                    repo.get_line_commits(f, effective_line, effective_line, None)
                 } else {
                     repo.get_commit_history(None)
                 }
@@ -549,6 +551,10 @@ impl AppState {
         }
     }
 
+    pub fn effective_cursor_line(&self) -> usize {
+        crate::git::diff_parser::resolve_file_line_number(&self.code_lines, self.cursor_line)
+    }
+
     pub fn perform_timeline_jump(
         &mut self,
         scope: crate::timeline::JumpScope,
@@ -562,12 +568,13 @@ impl AppState {
             }
         };
 
+        let effective_line = self.effective_cursor_line();
         let navigator = crate::timeline::TimelineNavigator::new();
         match navigator.jump(crate::timeline::TimelineJumpRequest {
             repo_path: &self.repo_path,
             file_path: &file_path,
             source_lines: &self.code_lines,
-            cursor_line: self.cursor_line,
+            cursor_line: effective_line,
             current_commit_hash: self.selected_commit_hash.as_deref(),
             scope,
             direction,
@@ -796,11 +803,12 @@ impl AppState {
 
         if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
             let commit = self.selected_commit_hash.as_deref();
+            let effective_line = self.effective_cursor_line();
             let blame_res = repo.get_blame_at_commit(
                 commit,
                 &file_path,
-                Some(self.cursor_line),
-                Some(self.cursor_line),
+                Some(effective_line),
+                Some(effective_line),
             );
             if let Ok(blame_lines) = blame_res {
                 self.current_line_blame = blame_lines.into_iter().next();
@@ -1056,5 +1064,36 @@ mod tests {
         }
         assert_eq!(app.cursor_line, 6);
         assert!(app.code_scroll_offset < scrolled_offset);
+    }
+
+    #[test]
+    fn test_effective_cursor_line_in_diff_view() {
+        let mut app = AppState::new(PathBuf::from("."));
+        app.code_lines = vec![
+            "diff --git a/main.rs b/main.rs".into(),
+            "--- a/main.rs".into(),
+            "+++ b/main.rs".into(),
+            "@@ -10,3 +10,4 @@".into(),
+            " fn main() {".into(),      // diff line 5 -> line 10
+            "-    old_line();".into(),   // diff line 6 -> old line 11 (deleted)
+            "+    new_line_1();".into(), // diff line 7 -> new line 11 (added)
+            "+    new_line_2();".into(), // diff line 8 -> new line 12 (added)
+            " }".into(),                // diff line 9 -> line 13
+        ];
+
+        app.cursor_line = 5;
+        assert_eq!(app.effective_cursor_line(), 10);
+
+        app.cursor_line = 6; // Deleted line
+        assert_eq!(app.effective_cursor_line(), 11);
+
+        app.cursor_line = 7; // Added line 1
+        assert_eq!(app.effective_cursor_line(), 11);
+
+        app.cursor_line = 8; // Added line 2
+        assert_eq!(app.effective_cursor_line(), 12);
+
+        app.cursor_line = 9; // Context line
+        assert_eq!(app.effective_cursor_line(), 13);
     }
 }
