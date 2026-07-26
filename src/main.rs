@@ -31,13 +31,7 @@ fn load_repo_data(app: &mut AppState) {
                 .map(|c| (c.hash[..7.min(c.hash.len())].to_string(), c.summary))
                 .collect();
         }
-        if let Some(first_file) = app.files.first() {
-            let file_path = app.repo_path.join(first_file);
-            if let Ok(content) = std::fs::read_to_string(&file_path) {
-                app.code_lines = content.lines().map(|s| s.to_string()).collect();
-                app.update_current_line_blame();
-            }
-        }
+        app.load_currently_selected_file();
     }
 }
 
