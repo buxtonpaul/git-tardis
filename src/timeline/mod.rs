@@ -21,6 +21,7 @@ pub enum JumpDirection {
 #[derive(Debug, Clone, Copy)]
 pub struct TimelineJumpRequest<'a> {
     pub repo_path: &'a Path,
+    pub repo: Option<&'a GitRepo>,
     pub file_path: &'a str,
     pub source_lines: &'a [String],
     pub cursor_line: usize,
@@ -60,7 +61,14 @@ impl TimelineNavigator {
 
     /// Perform a time travel jump for the given repo, file, cursor position, and jump mode.
     pub fn jump(&self, req: TimelineJumpRequest<'_>) -> Result<Option<TimelineJumpResult>, String> {
-        let repo = GitRepo::open(req.repo_path).map_err(|e| e.to_string())?;
+        let repo_owned;
+        let repo = match req.repo {
+            Some(r) => r,
+            None => {
+                repo_owned = GitRepo::open(req.repo_path).map_err(|e| e.to_string())?;
+                &repo_owned
+            }
+        };
 
         let source_code = req.source_lines.join("\n");
         let mut function_range: Option<(usize, usize)> = None;

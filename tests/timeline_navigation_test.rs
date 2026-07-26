@@ -276,6 +276,7 @@ fn test_timeline_navigator_direct_api() {
     let res = nav
         .jump(TimelineJumpRequest {
             repo_path: repo.work_dir(),
+            repo: Some(&repo),
             file_path: "foo.txt",
             source_lines: &["v2".to_string()],
             cursor_line: 1,

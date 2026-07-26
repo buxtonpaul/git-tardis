@@ -3,7 +3,7 @@ use std::path::PathBuf;
 mod types;
 pub use types::*;
 
-use crate::git::BlameLine;
+use crate::git::{BlameLine, GitRepo};
 use crate::treesitter::GrammarRegistry;
 use crate::ui::keymap::{Action, Scope};
 
@@ -74,6 +74,7 @@ impl NavigationMode {
 
 pub struct AppState {
     pub repo_path: PathBuf,
+    pub repo: Option<GitRepo>,
     pub active_panel: ActivePanel,
     pub sidebar_view: SidebarView,
     pub nav_mode: NavigationMode,
@@ -115,8 +116,10 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(repo_path: PathBuf) -> Self {
+        let repo = GitRepo::open(&repo_path).ok();
         Self {
             repo_path,
+            repo,
             active_panel: ActivePanel::Sidebar,
             sidebar_view: SidebarView::FileExplorer,
             nav_mode: NavigationMode::Commit,
@@ -156,6 +159,25 @@ impl AppState {
             blame_cache: std::collections::HashMap::new(),
             blame_subprocess_count: 0,
         }
+    }
+
+    pub fn ensure_repo(&mut self) -> Option<&GitRepo> {
+        if self.repo.is_none() {
+            self.repo = GitRepo::open(&self.repo_path).ok();
+        }
+        self.repo.as_ref()
+    }
+
+    pub fn repo(&self) -> Option<GitRepo> {
+        if let Some(ref r) = self.repo {
+            Some(r.clone())
+        } else {
+            GitRepo::open(&self.repo_path).ok()
+        }
+    }
+
+    pub fn repo_ref(&self) -> Option<&GitRepo> {
+        self.repo.as_ref()
     }
 
     pub fn toggle_panel_focus(&mut self) {
@@ -292,9 +314,10 @@ impl AppState {
     }
 
     pub fn update_candidate_commits(&mut self) {
-        let repo = match crate::git::GitRepo::open(&self.repo_path) {
-            Ok(r) => r,
-            Err(_) => return,
+        self.ensure_repo();
+        let repo = match self.repo() {
+            Some(r) => r,
+            None => return,
         };
 
         let cur_file = self.current_file_path();
@@ -366,6 +389,7 @@ impl AppState {
     }
 
     pub fn update_state_for_commit_hash(&mut self, hash: String) {
+        self.ensure_repo();
         self.selected_commit_hash = Some(hash.clone());
 
         // Sync commit_selected index in self.commits if hash exists in commit history
@@ -382,7 +406,7 @@ impl AppState {
         }
 
         // Fetch modified files for this commit
-        if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+        if let Some(repo) = self.repo() {
             if let Ok(commit_files) = repo.get_commit_files(&hash) {
                 self.modified_files = commit_files
                     .into_iter()
@@ -428,8 +452,9 @@ impl AppState {
     }
 
     pub fn reset_time_travel(&mut self) {
+        self.ensure_repo();
         self.selected_commit_hash = None;
-        if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+        if let Some(repo) = self.repo() {
             if let Ok(wd_files) = repo.list_files() {
                 self.files = wd_files;
                 if let Some(cur_file) = self.current_file_path() {
@@ -457,6 +482,7 @@ impl AppState {
     }
 
     pub fn load_currently_selected_file(&mut self) {
+        self.ensure_repo();
         match self.sidebar_view {
             SidebarView::FileExplorer => {
                 if let Some(f) = self.files.get(self.file_selected).cloned() {
@@ -498,7 +524,7 @@ impl AppState {
 
         if let Some(hash) = &self.selected_commit_hash {
             let short_hash = &hash[..7.min(hash.len())];
-            if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+            if let Some(repo) = self.repo() {
                 match repo.get_file_at_commit(hash, &clean_path) {
                     Ok(content) => {
                         self.code_lines = content.lines().map(|s| s.to_string()).collect();
@@ -542,13 +568,14 @@ impl AppState {
     }
 
     pub fn update_file_diff_highlights(&mut self) {
+        self.ensure_repo();
         self.file_diff_highlights.clear();
         let cur_file = match self.current_file_path() {
             Some(f) => f,
             None => return,
         };
 
-        let diff_res = if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+        let diff_res = if let Some(repo) = self.repo() {
             if let Some(hash) = &self.selected_commit_hash {
                 repo.get_diff_file(hash, &cur_file)
             } else {
@@ -609,8 +636,11 @@ impl AppState {
 
         let effective_line = self.effective_cursor_line();
         let navigator = crate::timeline::TimelineNavigator::new();
+        self.ensure_repo();
+        let repo_opt = self.repo();
         match navigator.jump(crate::timeline::TimelineJumpRequest {
             repo_path: &self.repo_path,
+            repo: repo_opt.as_ref(),
             file_path: &file_path,
             source_lines: &self.code_lines,
             cursor_line: effective_line,
@@ -824,6 +854,7 @@ impl AppState {
     }
 
     pub fn update_current_line_blame(&mut self) {
+        self.ensure_repo();
         let file_path = match self.current_file_path() {
             Some(path) => path,
             None => {
@@ -843,7 +874,7 @@ impl AppState {
         let key = (file_path.clone(), self.selected_commit_hash.clone());
 
         if !self.blame_cache.contains_key(&key) {
-            if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+            if let Some(repo) = self.repo() {
                 let commit = self.selected_commit_hash.as_deref();
                 self.blame_subprocess_count += 1;
                 let blame_res = repo.get_blame_at_commit(commit, &file_path, None, None);
