@@ -172,11 +172,17 @@ impl TimelineNavigator {
                     let commit_files = repo.get_commit_files(&target_commit.hash).map_err(|cf_err| {
                         format!("Failed to read file {} at commit {}: {:?} (failed fetching commit files: {:?})", file_path, target_commit.short_hash, e, cf_err)
                     })?;
-                    if let Some(first) = commit_files.iter().find(|f| !f.status_code().contains('D')) {
+                    if let Some(first) =
+                        commit_files.iter().find(|f| !f.status_code().contains('D'))
+                    {
                         target_file_path = first.path.clone();
-                        repo.get_file_at_commit(&target_commit.hash, &target_file_path).map_err(|read_err| {
-                            format!("Failed to read fallback file {} at commit {}: {:?}", target_file_path, target_commit.short_hash, read_err)
-                        })?
+                        repo.get_file_at_commit(&target_commit.hash, &target_file_path)
+                            .map_err(|read_err| {
+                                format!(
+                                    "Failed to read fallback file {} at commit {}: {:?}",
+                                    target_file_path, target_commit.short_hash, read_err
+                                )
+                            })?
                     } else {
                         return Err(format!(
                             "File {} did not exist at commit {}, and no valid modified file found",

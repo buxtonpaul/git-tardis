@@ -403,8 +403,14 @@ fn test_changing_selected_file_updates_candidate_commits() {
 
     // Candidates for file_a.txt: C3, C1
     assert_eq!(app.candidate_commits.len(), 2);
-    assert!(app.candidate_commits.iter().any(|(_, msg)| msg.contains("C3")));
-    assert!(app.candidate_commits.iter().any(|(_, msg)| msg.contains("C1")));
+    assert!(app
+        .candidate_commits
+        .iter()
+        .any(|(_, msg)| msg.contains("C3")));
+    assert!(app
+        .candidate_commits
+        .iter()
+        .any(|(_, msg)| msg.contains("C1")));
 
     // Move selection down in FileExplorer to file_b.txt
     app.move_selection_down();
@@ -412,8 +418,14 @@ fn test_changing_selected_file_updates_candidate_commits() {
 
     // Candidate commits list should automatically update to file_b.txt candidates (C4, C2)
     assert_eq!(app.candidate_commits.len(), 2);
-    assert!(app.candidate_commits.iter().any(|(_, msg)| msg.contains("C4")));
-    assert!(app.candidate_commits.iter().any(|(_, msg)| msg.contains("C2")));
+    assert!(app
+        .candidate_commits
+        .iter()
+        .any(|(_, msg)| msg.contains("C4")));
+    assert!(app
+        .candidate_commits
+        .iter()
+        .any(|(_, msg)| msg.contains("C2")));
 }
 
 #[test]
@@ -477,4 +489,86 @@ fn test_code_viewer_focused_navigation_updates_commit_and_code() {
     app.dispatch_action(Action::JumpNextFile);
     assert_eq!(app.code_lines, vec!["fn main() { println!(\"v2\"); }"]);
     assert_eq!(app.commit_selected, 1);
+}
+
+#[test]
+fn test_sidebar_commit_list_views_bracket_navigation() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(&repo, "file_a.txt", "v1\n", "C1: Add file_a");
+    commit_file(&repo, "file_b.txt", "v1\n", "C2: Add file_b");
+    commit_file(&repo, "file_a.txt", "v2\n", "C3: Update file_a");
+
+    let history = repo.get_commit_history(None).unwrap();
+
+    let mut app = AppState::new(repo.work_dir().to_path_buf());
+    app.files = vec!["file_a.txt".to_string(), "file_b.txt".to_string()];
+    app.commits = history
+        .into_iter()
+        .map(|c| (c.hash[..7.min(c.hash.len())].to_string(), c.summary))
+        .collect();
+    app.file_selected = 0;
+    app.load_currently_selected_file();
+
+    // Verify keymap dispatcher resolves '[' and ']' in Scope::Sidebar
+    let registry = git_tardis::ui::KeymapRegistry::new();
+    let mut dispatcher = git_tardis::ui::KeyDispatcher::new(registry);
+    assert_eq!(
+        dispatcher.handle_key(
+            git_tardis::ui::KeyStroke::Char('['),
+            git_tardis::ui::Scope::Sidebar
+        ),
+        Some(Action::JumpPrevAuto)
+    );
+    assert_eq!(
+        dispatcher.handle_key(
+            git_tardis::ui::KeyStroke::Char(']'),
+            git_tardis::ui::Scope::Sidebar
+        ),
+        Some(Action::JumpNextAuto)
+    );
+
+    // Set Navigation Mode to FILE
+    app.set_navigation_mode(NavigationMode::File);
+    assert_eq!(app.active_panel, git_tardis::app::ActivePanel::Sidebar);
+
+    // 1. In TargetCandidates view in Sidebar (File mode candidates for file_a.txt: C3 and C1)
+    app.set_sidebar_view(git_tardis::app::SidebarView::TargetCandidates);
+    assert_eq!(app.candidate_commits.len(), 2);
+    assert!(app.candidate_commits[0].1.contains("C3"));
+    assert!(app.candidate_commits[1].1.contains("C1"));
+
+    // Press '[' in Sidebar -> JumpPrevAuto in File mode -> jumps to C3
+    app.dispatch_action(Action::JumpPrevAuto);
+    assert!(app.selected_commit_hash.is_some());
+    assert_eq!(app.candidate_selected, 0); // Pointing to C3
+    assert_eq!(app.code_lines, vec!["v2"]);
+
+    // Press '[' again -> jumps to C1 (skipping C2 because C2 didn't touch file_a.txt)
+    app.dispatch_action(Action::JumpPrevAuto);
+    assert_eq!(app.candidate_selected, 1); // Pointing to C1
+    assert_eq!(app.code_lines, vec!["v1"]);
+
+    // Press ']' -> jumps back to C3
+    app.dispatch_action(Action::JumpNextAuto);
+    assert_eq!(app.candidate_selected, 0); // Pointing to C3
+    assert_eq!(app.code_lines, vec!["v2"]);
+
+    // Press ']' -> reset time travel (return to working directory)
+    app.dispatch_action(Action::JumpNextAuto);
+    assert_eq!(app.selected_commit_hash, None);
+
+    // 2. In CommitTimeline view in Sidebar with File mode still active
+    app.set_sidebar_view(git_tardis::app::SidebarView::CommitTimeline);
+    app.dispatch_action(Action::JumpPrevAuto);
+    assert_eq!(app.code_lines, vec!["v2"]);
+
+    // Press '[' again -> jumps to C1 according to active File nav_mode
+    app.dispatch_action(Action::JumpPrevAuto);
+    assert_eq!(app.code_lines, vec!["v1"]);
+
+    // Reset back
+    app.dispatch_action(Action::JumpNextAuto);
+    app.dispatch_action(Action::JumpNextAuto);
+    assert_eq!(app.selected_commit_hash, None);
 }

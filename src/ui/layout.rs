@@ -157,7 +157,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     });
 
                     let prefix = if is_candidate { "* " } else { "  " };
-                    let text = format!("{}{}", prefix, format!("{} {}", hash, msg));
+                    let text = format!("{}{} {}", prefix, hash, msg);
 
                     let style = if i == safe_sel && is_sidebar_active {
                         Style::default()
@@ -187,7 +187,9 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             let safe_sel = if state.candidate_commits.is_empty() {
                 0
             } else {
-                state.candidate_selected.min(state.candidate_commits.len() - 1)
+                state
+                    .candidate_selected
+                    .min(state.candidate_commits.len() - 1)
             };
 
             let items: Vec<ListItem> = state
@@ -287,10 +289,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                             span_style = span_style.fg(Color::Yellow);
                         }
                         span_style = span_style.add_modifier(Modifier::BOLD);
-                    } else if is_cursor {
-                        if span_style.fg.is_none() {
-                            span_style = span_style.fg(Color::Yellow);
-                        }
+                    } else if is_cursor && span_style.fg.is_none() {
+                        span_style = span_style.fg(Color::Yellow);
                     }
                     spans.push(Span::styled(hl_span.text.clone(), span_style));
                 }

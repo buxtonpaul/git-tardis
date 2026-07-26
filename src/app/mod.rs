@@ -195,13 +195,11 @@ impl AppState {
                             self.modified_selected += 1;
                             self.load_currently_selected_file();
                         }
-                    } else {
-                        if !self.dirty_files.is_empty()
-                            && self.dirty_selected + 1 < self.dirty_files.len()
-                        {
-                            self.dirty_selected += 1;
-                            self.load_currently_selected_file();
-                        }
+                    } else if !self.dirty_files.is_empty()
+                        && self.dirty_selected + 1 < self.dirty_files.len()
+                    {
+                        self.dirty_selected += 1;
+                        self.load_currently_selected_file();
                     }
                 }
                 SidebarView::CommitTimeline => {
@@ -247,11 +245,9 @@ impl AppState {
                             self.modified_selected -= 1;
                             self.load_currently_selected_file();
                         }
-                    } else {
-                        if self.dirty_selected > 0 {
-                            self.dirty_selected -= 1;
-                            self.load_currently_selected_file();
-                        }
+                    } else if self.dirty_selected > 0 {
+                        self.dirty_selected -= 1;
+                        self.load_currently_selected_file();
                     }
                 }
                 SidebarView::CommitTimeline => {
@@ -335,9 +331,11 @@ impl AppState {
                 .collect();
 
             if let Some(hash) = &self.selected_commit_hash {
-                if let Some(idx) = self.candidate_commits.iter().position(|(h, _)| {
-                    h == hash || hash.starts_with(h) || h.starts_with(hash)
-                }) {
+                if let Some(idx) = self
+                    .candidate_commits
+                    .iter()
+                    .position(|(h, _)| h == hash || hash.starts_with(h) || h.starts_with(hash))
+                {
                     self.candidate_selected = idx;
                 } else {
                     self.candidate_selected = 0;
@@ -481,41 +479,39 @@ impl AppState {
                         self.code_scroll_offset = 0;
                         self.update_current_line_blame();
                     }
-                } else {
-                    if let Some(item) = self.dirty_files.get(self.dirty_selected).cloned() {
-                        let clean_path = item.split_whitespace().next().unwrap_or(&item);
-                        self.active_file = Some(clean_path.to_string());
-                        let is_deleted = item.contains("(D)");
+                } else if let Some(item) = self.dirty_files.get(self.dirty_selected).cloned() {
+                    let clean_path = item.split_whitespace().next().unwrap_or(&item);
+                    self.active_file = Some(clean_path.to_string());
+                    let is_deleted = item.contains("(D)");
 
-                        if is_deleted {
-                            self.code_lines.clear();
-                            self.cursor_line = 1;
-                            self.code_scroll_offset = 0;
-                            self.status_message =
-                                format!("File '{}' was deleted in working tree", clean_path);
-                            self.update_current_line_blame();
-                        } else {
-                            let file_path = self.repo_path.join(clean_path);
-                            if let Ok(content) = std::fs::read_to_string(&file_path) {
-                                self.code_lines = content.lines().map(|s| s.to_string()).collect();
-                                self.cursor_line = 1;
-                                self.code_scroll_offset = 0;
-                                self.status_message = format!("Loaded dirty file: {}", clean_path);
-                                self.update_current_line_blame();
-                            } else {
-                                self.code_lines.clear();
-                                self.cursor_line = 1;
-                                self.code_scroll_offset = 0;
-                                self.status_message = format!("Could not read file: {}", clean_path);
-                                self.update_current_line_blame();
-                            }
-                        }
-                    } else {
+                    if is_deleted {
                         self.code_lines.clear();
                         self.cursor_line = 1;
                         self.code_scroll_offset = 0;
+                        self.status_message =
+                            format!("File '{}' was deleted in working tree", clean_path);
                         self.update_current_line_blame();
+                    } else {
+                        let file_path = self.repo_path.join(clean_path);
+                        if let Ok(content) = std::fs::read_to_string(&file_path) {
+                            self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                            self.cursor_line = 1;
+                            self.code_scroll_offset = 0;
+                            self.status_message = format!("Loaded dirty file: {}", clean_path);
+                            self.update_current_line_blame();
+                        } else {
+                            self.code_lines.clear();
+                            self.cursor_line = 1;
+                            self.code_scroll_offset = 0;
+                            self.status_message = format!("Could not read file: {}", clean_path);
+                            self.update_current_line_blame();
+                        }
                     }
+                } else {
+                    self.code_lines.clear();
+                    self.cursor_line = 1;
+                    self.code_scroll_offset = 0;
+                    self.update_current_line_blame();
                 }
             }
             SidebarView::CommitTimeline | SidebarView::TargetCandidates => {
@@ -526,7 +522,8 @@ impl AppState {
                         if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
                             match repo.get_file_at_commit(&hash, &clean_path) {
                                 Ok(content) => {
-                                    self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                                    self.code_lines =
+                                        content.lines().map(|s| s.to_string()).collect();
                                     self.cursor_line = 1;
                                     self.code_scroll_offset = 0;
                                     self.status_message =
@@ -534,11 +531,16 @@ impl AppState {
                                     self.update_current_line_blame();
                                 }
                                 Err(_) => {
-                                    self.code_lines = vec![format!("File '{}' did not exist at commit {}", clean_path, short_hash)];
+                                    self.code_lines = vec![format!(
+                                        "File '{}' did not exist at commit {}",
+                                        clean_path, short_hash
+                                    )];
                                     self.cursor_line = 1;
                                     self.code_scroll_offset = 0;
-                                    self.status_message =
-                                        format!("File '{}' did not exist at commit {}", clean_path, short_hash);
+                                    self.status_message = format!(
+                                        "File '{}' did not exist at commit {}",
+                                        clean_path, short_hash
+                                    );
                                     self.update_current_line_blame();
                                 }
                             }
@@ -643,8 +645,11 @@ impl AppState {
         let cursor_idx = self.cursor_line.saturating_sub(1);
         let eff_scrolloff = self.scrolloff.min(viewport_height.saturating_sub(1) / 2);
 
-        let min_top = cursor_idx
-            .saturating_sub(viewport_height.saturating_sub(1).saturating_sub(eff_scrolloff));
+        let min_top = cursor_idx.saturating_sub(
+            viewport_height
+                .saturating_sub(1)
+                .saturating_sub(eff_scrolloff),
+        );
         let max_top = cursor_idx.saturating_sub(eff_scrolloff);
 
         if self.code_scroll_offset < min_top {
@@ -739,8 +744,9 @@ impl AppState {
                 .saturating_sub(self.code_viewport_height);
             if self.code_scroll_offset < max_scroll {
                 self.code_scroll_offset += 1;
-                let eff_scrolloff =
-                    self.scrolloff.min(self.code_viewport_height.saturating_sub(1) / 2);
+                let eff_scrolloff = self
+                    .scrolloff
+                    .min(self.code_viewport_height.saturating_sub(1) / 2);
                 let min_cursor = self.code_scroll_offset + eff_scrolloff + 1;
                 if self.cursor_line < min_cursor {
                     self.cursor_line = min_cursor.min(self.code_lines.len());
@@ -752,19 +758,20 @@ impl AppState {
     }
 
     pub fn scroll_line_up(&mut self) {
-        if self.active_panel == ActivePanel::CodeViewer && !self.code_lines.is_empty() {
-            if self.code_scroll_offset > 0 {
-                self.code_scroll_offset -= 1;
-                let eff_scrolloff =
-                    self.scrolloff.min(self.code_viewport_height.saturating_sub(1) / 2);
-                let max_cursor = self
-                    .code_scroll_offset
-                    + self.code_viewport_height.saturating_sub(eff_scrolloff);
-                if self.cursor_line > max_cursor {
-                    self.cursor_line = max_cursor.max(1);
-                    self.update_current_line_blame();
-                    self.update_candidate_commits();
-                }
+        if self.active_panel == ActivePanel::CodeViewer
+            && !self.code_lines.is_empty()
+            && self.code_scroll_offset > 0
+        {
+            self.code_scroll_offset -= 1;
+            let eff_scrolloff = self
+                .scrolloff
+                .min(self.code_viewport_height.saturating_sub(1) / 2);
+            let max_cursor =
+                self.code_scroll_offset + self.code_viewport_height.saturating_sub(eff_scrolloff);
+            if self.cursor_line > max_cursor {
+                self.cursor_line = max_cursor.max(1);
+                self.update_current_line_blame();
+                self.update_candidate_commits();
             }
         }
     }
@@ -772,7 +779,8 @@ impl AppState {
     pub fn center_cursor(&mut self) {
         if self.active_panel == ActivePanel::CodeViewer && !self.code_lines.is_empty() {
             let half_view = self.code_viewport_height / 2;
-            self.code_scroll_offset = (self.cursor_line.saturating_sub(1)).saturating_sub(half_view);
+            self.code_scroll_offset =
+                (self.cursor_line.saturating_sub(1)).saturating_sub(half_view);
             let max_scroll = self
                 .code_lines
                 .len()
