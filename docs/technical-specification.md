@@ -377,15 +377,31 @@ Tree-sitter is selected as the primary syntax highlighting engine over `syntect`
 
 ## 9. Verification & Architectural Sign-off
 
-All core mechanisms specified in this document have been prototyped, benchmarked, and verified with dedicated test suites in `research/`:
+All core mechanisms specified in this document were prototyped, benchmarked, and verified with dedicated research test suites in Phase 1 before being integrated into the core `git-tardis` application crate.
 
-- **RPC Communication & Autocommands**: Verified in `research/neovim-rpc-poc/`
-- **Tree-sitter AST Function Queries**: Verified in `research/tree-sitter-poc/`
-- **Ratatui Split Layout & Keyboard Routing**: Verified in `research/ratatui-layout-poc/`
-- **Interactive Rebase & Sequence Editing**: Verified in `research/interactive-rebase-poc/`
-- **Conflict Handling Lifecycle**: Verified in `docs/research/conflict-detection-and-resolution.md`
-- **Neovim Lua Plugin Packaging**: Verified in `research/neovim-plugin-poc/`
-- **Syntax Highlighting & Theme Syncing**: Verified in `research/syntax-highlighting-poc/`
+### 9.1 Historical Research & Proof-of-Concept Code References
+
+The completed research prototypes and specifications have been removed from the active working tree to keep the repository clean. They remain permanently accessible in Git history. The table below records the commit hashes and file paths for each research area:
+
+| Feature / Research Area | Status | Historical Git Commit | Research Directories / Files |
+| :--- | :--- | :--- | :--- |
+| **Configurable Keybindings** | Completed | `5fce52e` | `research/keybindings-poc/`<br>`docs/research/configurable-keybindings.md` |
+| **Ratatui Split Sidebar Layout** | Completed | `50c9b77`, `e319326` | `research/ratatui-layout-poc/`<br>`docs/research/ratatui-sidebar-layout.md` |
+| **Syntax Highlighting & Theme Sync** | Completed | `4ac3ab7`, `e319326` | `research/syntax-highlighting-poc/`<br>`docs/research/syntax-highlighting-performance.md` |
+| **Tree-sitter AST Function Queries** | Completed | `c5319d0`, `e319326` | `research/tree-sitter-poc/`<br>`docs/research/tree-sitter-function-parsing.md` |
+| **Tree-sitter Grammar Extensibility** | Completed | `43f017b` | `research/tree-sitter-extensibility-poc/`<br>`docs/research/tree-sitter-grammar-extensibility.md` |
+| **Interactive Rebase & Sequence Editor** | In Progress (Issue #17) | `8cfd575`, `cb2bb7a` | `research/interactive-rebase-poc/`<br>`docs/research/interactive-rebase-modifications.md`<br>`docs/research/conflict-detection-and-resolution.md` |
+| **Neovim RPC Terminal Integration** | In Progress (Issue #18) | `cf9c01e` | `research/neovim-rpc-poc/`<br>`docs/research/neovim-rpc-terminal-integration.md` |
+| **Neovim Lua Plugin Packaging** | In Progress (Issue #19) | `7b4d708` | `research/neovim-plugin-poc/`<br>`docs/research/neovim-plugin-launcher-packaging.md` |
+
+To inspect or checkout any historical research code from git history:
+```bash
+# View a historical research document:
+git show <commit>:<path>
+
+# Restore a historical research directory to a local temporary path:
+git checkout <commit> -- <research-path>
+```
 
 ---
 
