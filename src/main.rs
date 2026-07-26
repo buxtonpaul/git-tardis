@@ -15,6 +15,7 @@ fn load_repo_data(app: &mut AppState) {
     if let Some(repo) = app.repo() {
         if let Ok(files) = repo.list_files() {
             app.files = files;
+            app.expand_all_folders();
         }
         if let Ok(statuses) = repo.get_status() {
             let items: Vec<ModifiedFileEntry> =

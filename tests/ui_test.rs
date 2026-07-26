@@ -554,7 +554,7 @@ fn test_sidebar_viewport_scrolling_on_selection() {
     let mut terminal = Terminal::new(backend).unwrap();
 
     let mut app = AppState::new(PathBuf::from("."));
-    app.files = (1..=15).map(|i| format!("file_{}.rs", i)).collect();
+    app.files = (1..=15).map(|i| format!("file_{:02}.rs", i)).collect();
     app.sidebar_view = SidebarView::FileExplorer;
     app.file_selected = 12; // file_13.rs
 
@@ -564,7 +564,7 @@ fn test_sidebar_viewport_scrolling_on_selection() {
     // File 13 should be scrolled into view
     assert!(dbg.contains("file_13.rs"));
     // File 1 should have scrolled out of view
-    assert!(!dbg.contains("file_1.rs"));
+    assert!(!dbg.contains("file_01.rs"));
 }
 
 #[test]
