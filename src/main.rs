@@ -35,6 +35,7 @@ fn load_repo_data(app: &mut AppState) {
             let file_path = app.repo_path.join(first_file);
             if let Ok(content) = std::fs::read_to_string(&file_path) {
                 app.code_lines = content.lines().map(|s| s.to_string()).collect();
+                app.update_current_line_blame();
             }
         }
     }

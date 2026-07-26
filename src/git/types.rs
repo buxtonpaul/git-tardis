@@ -96,6 +96,8 @@ pub struct BlameLine {
     pub final_line: usize,
     pub author: String,
     pub author_mail: String,
+    #[serde(default)]
+    pub author_time: u64,
     pub summary: String,
     pub content: String,
 }

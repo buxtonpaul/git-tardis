@@ -132,9 +132,21 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     } else {
         Color::DarkGray
     };
+
+    let title_text = if let Some(blame) = &state.current_line_blame {
+        let blame_str = crate::git::format_blame_annotation(blame);
+        format!(
+            " Code Viewer - Mode: [{}] | Blame: {} ",
+            state.nav_mode.name(),
+            blame_str
+        )
+    } else {
+        format!(" Code Viewer - Mode: [{}] ", state.nav_mode.name())
+    };
+
     let code_block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" Code Viewer - Mode: [{}] ", state.nav_mode.name()))
+        .title(title_text)
         .border_style(Style::default().fg(code_border_color));
 
     let mut formatted_code = Vec::new();
@@ -204,6 +216,18 @@ pub fn render(frame: &mut Frame, state: &AppState) {
                     Style::default()
                 };
                 spans.push(Span::styled(line.clone(), line_style));
+            }
+
+            if is_cursor {
+                if let Some(blame) = &state.current_line_blame {
+                    let annotation = format!("   {}", crate::git::format_blame_annotation(blame));
+                    spans.push(Span::styled(
+                        annotation,
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::DIM),
+                    ));
+                }
             }
 
             formatted_code.push(Line::from(spans));

@@ -402,3 +402,68 @@ fn test_code_viewer_syntax_highlighting_rendering() {
     let quote_cell = &buffer[(string_x, 5)];
     assert_eq!(quote_cell.fg, Color::Green);
 }
+
+#[test]
+fn test_current_line_git_blame_rendering_and_navigation() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path();
+
+    let run = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(repo_path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Alice Tester"]);
+    run(&["config", "user.email", "alice@example.com"]);
+
+    std::fs::write(repo_path.join("file.py"), "def line_one():\n    pass\n").unwrap();
+    run(&["add", "."]);
+    run(&["commit", "-m", "add line_one function"]);
+
+    std::fs::write(
+        repo_path.join("file.py"),
+        "def line_one():\n    pass\n\ndef line_two():\n    pass\n",
+    )
+    .unwrap();
+    run(&["add", "."]);
+    run(&["commit", "-m", "add line_two function"]);
+
+    let mut app = AppState::new(repo_path.to_path_buf());
+    app.files = vec!["file.py".to_string()];
+    app.file_selected = 0;
+    app.load_currently_selected_file();
+
+    // Line 1 should be selected (cursor_line = 1)
+    assert_eq!(app.cursor_line, 1);
+    assert!(app.current_line_blame.is_some());
+    let blame1 = app.current_line_blame.as_ref().unwrap();
+    assert_eq!(blame1.author, "Alice Tester");
+    assert_eq!(blame1.summary, "add line_one function");
+
+    let backend = TestBackend::new(140, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal.draw(|f| render(f, &app)).unwrap();
+    let dbg1 = format!("{:?}", terminal.backend().buffer());
+    assert!(dbg1.contains("Alice Tester"));
+    assert!(dbg1.contains("add line_one function"));
+
+    // Move cursor down in CodeViewer -> cursor_line = 4
+    app.active_panel = ActivePanel::CodeViewer;
+    app.move_selection_down();
+    app.move_selection_down();
+    app.move_selection_down();
+    assert_eq!(app.cursor_line, 4);
+    assert!(app.current_line_blame.is_some());
+    let blame4 = app.current_line_blame.as_ref().unwrap();
+    assert_eq!(blame4.summary, "add line_two function");
+
+    terminal.draw(|f| render(f, &app)).unwrap();
+    let dbg4 = format!("{:?}", terminal.backend().buffer());
+    assert!(dbg4.contains("add line_two function"));
+}

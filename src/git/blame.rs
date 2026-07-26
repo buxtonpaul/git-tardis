@@ -6,13 +6,15 @@ use super::{BlameHunk, BlameLine, GitError, GitRepo};
 struct CommitMeta {
     author: String,
     author_mail: String,
+    author_time: u64,
     summary: String,
 }
 
 impl GitRepo {
-    /// Retrieve line-by-line blame information for a file (`git blame -p`).
-    pub fn get_blame(
+    /// Retrieve line-by-line blame information for a file at an optional commit (`git blame -p`).
+    pub fn get_blame_at_commit(
         &self,
+        commit: Option<&str>,
         path: &str,
         start_line: Option<usize>,
         end_line: Option<usize>,
@@ -26,11 +28,25 @@ impl GitRepo {
             args.push(&line_range_arg);
         }
 
+        if let Some(c) = commit {
+            args.push(c);
+        }
+
         args.push("--");
         args.push(path);
 
         let output = self.run_git(&args)?;
         parse_blame_porcelain(&output)
+    }
+
+    /// Retrieve line-by-line blame information for a file (`git blame -p`).
+    pub fn get_blame(
+        &self,
+        path: &str,
+        start_line: Option<usize>,
+        end_line: Option<usize>,
+    ) -> Result<Vec<BlameLine>, GitError> {
+        self.get_blame_at_commit(None, path, start_line, end_line)
     }
 
     /// Retrieve aggregated blame hunks for a file.
@@ -68,6 +84,7 @@ pub fn parse_blame_porcelain(raw: &str) -> Result<Vec<BlameLine>, GitError> {
                 final_line: current_final_line,
                 author: meta.author,
                 author_mail: meta.author_mail,
+                author_time: meta.author_time,
                 summary: meta.summary,
                 content,
             });
@@ -100,6 +117,9 @@ pub fn parse_blame_porcelain(raw: &str) -> Result<Vec<BlameLine>, GitError> {
                             .and_then(|m| m.strip_suffix('>'))
                             .unwrap_or(mail)
                             .to_string();
+                    }
+                    "author-time" => {
+                        meta.author_time = value.trim().parse().unwrap_or(0);
                     }
                     "summary" => meta.summary = value.trim().to_string(),
                     _ => {}
@@ -148,4 +168,75 @@ pub fn aggregate_blame_hunks(lines: &[BlameLine]) -> Vec<BlameHunk> {
 
 fn is_hex_hash(s: &str) -> bool {
     s.len() >= 7 && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Format relative time from a Unix timestamp (e.g. "2 days ago", "just now").
+pub fn format_relative_time(timestamp: u64) -> String {
+    if timestamp == 0 {
+        return String::new();
+    }
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(timestamp);
+
+    if now < timestamp {
+        return "recently".to_string();
+    }
+
+    let diff = now - timestamp;
+    let minutes = diff / 60;
+    let hours = minutes / 60;
+    let days = hours / 24;
+    let months = days / 30;
+    let years = days / 365;
+
+    if years > 0 {
+        format!("{} year{} ago", years, if years > 1 { "s" } else { "" })
+    } else if months > 0 {
+        format!("{} month{} ago", months, if months > 1 { "s" } else { "" })
+    } else if days > 0 {
+        format!("{} day{} ago", days, if days > 1 { "s" } else { "" })
+    } else if hours > 0 {
+        format!("{} hour{} ago", hours, if hours > 1 { "s" } else { "" })
+    } else if minutes > 0 {
+        format!(
+            "{} minute{} ago",
+            minutes,
+            if minutes > 1 { "s" } else { "" }
+        )
+    } else {
+        "just now".to_string()
+    }
+}
+
+/// Format Git blame line into a user-friendly annotation string.
+pub fn format_blame_annotation(blame: &BlameLine) -> String {
+    if blame.commit_hash.is_empty() || blame.commit_hash.chars().all(|c| c == '0') {
+        let author = if blame.author.is_empty() {
+            "You"
+        } else {
+            blame.author.as_str()
+        };
+        return format!("{} • Not Committed Yet", author);
+    }
+
+    let short_hash = &blame.commit_hash[..7.min(blame.commit_hash.len())];
+    let time_str = format_relative_time(blame.author_time);
+
+    if time_str.is_empty() {
+        if blame.summary.is_empty() {
+            format!("{} • {}", blame.author, short_hash)
+        } else {
+            format!("{} • {} \"{}\"", blame.author, short_hash, blame.summary)
+        }
+    } else if blame.summary.is_empty() {
+        format!("{} • {} • {}", blame.author, time_str, short_hash)
+    } else {
+        format!(
+            "{} • {} • {} \"{}\"",
+            blame.author, time_str, short_hash, blame.summary
+        )
+    }
 }

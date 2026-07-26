@@ -57,6 +57,44 @@ fn commit_file(repo: &GitRepo, filename: &str, content: &str, message: &str) {
 }
 
 #[test]
+fn test_format_blame_annotation() {
+    use git_tardis::git::{format_blame_annotation, format_relative_time, BlameLine};
+
+    let uncommitted = BlameLine {
+        commit_hash: "0000000000000000000000000000000000000000".to_string(),
+        orig_line: 1,
+        final_line: 1,
+        author: "Paul".to_string(),
+        author_mail: "paul@example.com".to_string(),
+        author_time: 0,
+        summary: "".to_string(),
+        content: "test".to_string(),
+    };
+    assert_eq!(
+        format_blame_annotation(&uncommitted),
+        "Paul • Not Committed Yet"
+    );
+
+    let committed = BlameLine {
+        commit_hash: "a1b2c3d4e5f6789".to_string(),
+        orig_line: 1,
+        final_line: 1,
+        author: "Alice".to_string(),
+        author_mail: "alice@example.com".to_string(),
+        author_time: 1600000000,
+        summary: "fix bug".to_string(),
+        content: "test".to_string(),
+    };
+    let annotation = format_blame_annotation(&committed);
+    assert!(annotation.contains("Alice"));
+    assert!(annotation.contains("a1b2c3d"));
+    assert!(annotation.contains("fix bug"));
+
+    let time_str = format_relative_time(0);
+    assert_eq!(time_str, "");
+}
+
+#[test]
 fn test_not_a_repository() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let res = GitRepo::open(temp_dir.path());

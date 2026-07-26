@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::git::BlameLine;
 use crate::treesitter::GrammarRegistry;
 use crate::ui::keymap::{Action, Scope};
 
@@ -87,6 +88,7 @@ pub struct AppState {
     pub running: bool,
 
     pub grammar_registry: GrammarRegistry,
+    pub current_line_blame: Option<BlameLine>,
 }
 
 impl AppState {
@@ -117,6 +119,7 @@ impl AppState {
             running: true,
 
             grammar_registry: GrammarRegistry::new(),
+            current_line_blame: None,
         }
     }
 
@@ -171,6 +174,7 @@ impl AppState {
             ActivePanel::CodeViewer => {
                 if !self.code_lines.is_empty() && self.cursor_line < self.code_lines.len() {
                     self.cursor_line += 1;
+                    self.update_current_line_blame();
                 }
             }
         }
@@ -201,6 +205,7 @@ impl AppState {
             ActivePanel::CodeViewer => {
                 if self.cursor_line > 1 {
                     self.cursor_line -= 1;
+                    self.update_current_line_blame();
                 }
             }
         }
@@ -238,6 +243,7 @@ impl AppState {
                         self.code_lines = content.lines().map(|s| s.to_string()).collect();
                         self.cursor_line = 1;
                         self.status_message = format!("Loaded file: {}", f);
+                        self.update_current_line_blame();
                     } else {
                         self.status_message = format!("Could not read file: {}", f);
                     }
@@ -253,6 +259,7 @@ impl AppState {
                                 self.cursor_line = 1;
                                 self.status_message =
                                     format!("Loaded {} at commit {}", clean_path, hash);
+                                self.update_current_line_blame();
                                 return;
                             }
                         }
@@ -263,6 +270,7 @@ impl AppState {
                         self.code_lines = content.lines().map(|s| s.to_string()).collect();
                         self.cursor_line = 1;
                         self.status_message = format!("Loaded modified file: {}", clean_path);
+                        self.update_current_line_blame();
                     } else {
                         self.status_message = format!("Could not read file: {}", clean_path);
                     }
@@ -322,6 +330,7 @@ impl AppState {
                 }
                 self.status_message = result.status_message;
                 self.update_modified_files_for_selected_commit();
+                self.update_current_line_blame();
             }
             Ok(None) => {
                 self.selected_commit_hash = None;
@@ -334,6 +343,41 @@ impl AppState {
             Err(err_msg) => {
                 self.status_message = err_msg;
             }
+        }
+    }
+
+    pub fn update_current_line_blame(&mut self) {
+        let file_path = match self.current_file_path() {
+            Some(path) => path,
+            None => {
+                self.current_line_blame = None;
+                return;
+            }
+        };
+
+        if self.code_lines.is_empty()
+            || self.cursor_line == 0
+            || self.cursor_line > self.code_lines.len()
+        {
+            self.current_line_blame = None;
+            return;
+        }
+
+        if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+            let commit = self.selected_commit_hash.as_deref();
+            let blame_res = repo.get_blame_at_commit(
+                commit,
+                &file_path,
+                Some(self.cursor_line),
+                Some(self.cursor_line),
+            );
+            if let Ok(blame_lines) = blame_res {
+                self.current_line_blame = blame_lines.into_iter().next();
+            } else {
+                self.current_line_blame = None;
+            }
+        } else {
+            self.current_line_blame = None;
         }
     }
 
