@@ -287,9 +287,24 @@ fn test_timeline_navigator_direct_api() {
 fn test_code_viewer_focused_navigation_updates_commit_and_code() {
     let (_dir, repo) = setup_test_repo();
 
-    commit_file(&repo, "main.rs", "fn main() { println!(\"v1\"); }\n", "Commit 1");
-    commit_file(&repo, "main.rs", "fn main() { println!(\"v2\"); }\n", "Commit 2");
-    commit_file(&repo, "main.rs", "fn main() { println!(\"v3\"); }\n", "Commit 3");
+    commit_file(
+        &repo,
+        "main.rs",
+        "fn main() { println!(\"v1\"); }\n",
+        "Commit 1",
+    );
+    commit_file(
+        &repo,
+        "main.rs",
+        "fn main() { println!(\"v2\"); }\n",
+        "Commit 2",
+    );
+    commit_file(
+        &repo,
+        "main.rs",
+        "fn main() { println!(\"v3\"); }\n",
+        "Commit 3",
+    );
 
     let history = repo.get_commit_history(None).unwrap();
 

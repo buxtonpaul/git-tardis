@@ -252,9 +252,11 @@ impl AppState {
         self.selected_commit_hash = Some(hash.clone());
 
         // Sync commit_selected index in self.commits if hash exists in commit history
-        if let Some(idx) = self.commits.iter().position(|(h, _)| {
-            h == &hash || hash.starts_with(h) || h.starts_with(&hash)
-        }) {
+        if let Some(idx) = self
+            .commits
+            .iter()
+            .position(|(h, _)| h == &hash || hash.starts_with(h) || h.starts_with(&hash))
+        {
             self.commit_selected = idx;
         }
 
@@ -320,7 +322,10 @@ impl AppState {
                             self.code_lines.clear();
                             self.cursor_line = 1;
                             let short_hash = &hash[..7.min(hash.len())];
-                            self.status_message = format!("File '{}' was deleted in commit {}", clean_path, short_hash);
+                            self.status_message = format!(
+                                "File '{}' was deleted in commit {}",
+                                clean_path, short_hash
+                            );
                             return;
                         }
 
@@ -398,8 +403,10 @@ impl AppState {
                             self.cursor_line = 1;
                             self.code_scroll_offset = 0;
                             let short_hash = &hash[..7.min(hash.len())];
-                            self.status_message =
-                                format!("File '{}' was deleted in commit {}", clean_path, short_hash);
+                            self.status_message = format!(
+                                "File '{}' was deleted in commit {}",
+                                clean_path, short_hash
+                            );
                             self.update_current_line_blame();
                             return;
                         }
@@ -417,8 +424,6 @@ impl AppState {
                             }
                         }
                     }
-                }
-            }
                 }
             }
         }
