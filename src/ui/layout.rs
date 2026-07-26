@@ -274,10 +274,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     let mut formatted_code = Vec::new();
     if state.code_lines.is_empty() {
-        formatted_code.push(Line::from(Span::styled(
-            "  (No file or code content loaded)",
-            Style::default().fg(Color::DarkGray),
-        )));
+        formatted_code = crate::ui::splash::render_splashscreen_lines(state.git_version.as_deref());
     } else {
         let grammar_entry = state.current_file_path().and_then(|path| {
             let ext = std::path::Path::new(&path)
@@ -420,7 +417,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     // 3. Footer Status Bar
     let status_text = format!(
-        " Status: {} | Keys: [?] Help | [Tab] Switch Panel | [1/2/3/4] Sidebar View | [m] Nav Mode | [q] Quit",
+        " Status: {} | Keys: [?] Help | [S] Splash | [Tab] Switch Panel | [1/2/3/4] Sidebar View | [m] Nav Mode | [q] Quit",
         state.status_message
     );
     let status_bar = Paragraph::new(status_text)
@@ -483,6 +480,21 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
         let help_paragraph = Paragraph::new(help_lines).block(help_block);
         frame.render_widget(help_paragraph, area);
+    }
+
+    // 5. TARDIS Splashscreen Overlay Popup
+    if state.show_splashscreen {
+        let area = centered_rect(80, 88, frame.area());
+        frame.render_widget(Clear, area);
+
+        let splash_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" TARDIS Splashscreen / About ")
+            .border_style(Style::default().fg(Color::Cyan));
+
+        let splash_lines = crate::ui::splash::render_splashscreen_lines(state.git_version.as_deref());
+        let splash_paragraph = Paragraph::new(splash_lines).block(splash_block);
+        frame.render_widget(splash_paragraph, area);
     }
 }
 
