@@ -28,6 +28,7 @@ pub struct KeymapConfig {
 #[derive(Debug, Deserialize, Clone, Default, PartialEq, Eq)]
 pub struct ScopeKeymapConfig {
     pub toggle_help: Option<KeyBindingConfig>,
+    pub toggle_splashscreen: Option<KeyBindingConfig>,
     pub quit: Option<KeyBindingConfig>,
     pub toggle_focus: Option<KeyBindingConfig>,
     pub cycle_nav_mode: Option<KeyBindingConfig>,

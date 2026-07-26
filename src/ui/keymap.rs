@@ -113,6 +113,7 @@ pub struct KeySequence(pub Vec<KeyStroke>);
 pub enum Action {
     Quit,
     ToggleHelp,
+    ToggleSplashscreen,
     ToggleFocus,
     SetSidebarView(usize), // 1, 2, 3
     CycleNavMode,
@@ -188,6 +189,7 @@ impl KeymapRegistry {
         self.bind(Scope::Global, "q", Action::Quit);
         self.bind(Scope::Global, "<Esc>", Action::Quit);
         self.bind(Scope::Global, "?", Action::ToggleHelp);
+        self.bind(Scope::Global, "S", Action::ToggleSplashscreen);
         self.bind(Scope::Global, "<Tab>", Action::ToggleFocus);
         self.bind(Scope::Global, "h", Action::ToggleFocus);
         self.bind(Scope::Global, "l", Action::ToggleFocus);
@@ -325,6 +327,12 @@ impl KeymapRegistry {
 
         bind_list(self, scope, &mappings.quit, Action::Quit);
         bind_list(self, scope, &mappings.toggle_help, Action::ToggleHelp);
+        bind_list(
+            self,
+            scope,
+            &mappings.toggle_splashscreen,
+            Action::ToggleSplashscreen,
+        );
         bind_list(self, scope, &mappings.toggle_focus, Action::ToggleFocus);
         bind_list(self, scope, &mappings.cycle_nav_mode, Action::CycleNavMode);
         bind_list(self, scope, &mappings.move_up, Action::MoveUp);

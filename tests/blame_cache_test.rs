@@ -27,7 +27,7 @@ fn setup_multi_commit_repo() -> (TempDir, GitRepo) {
     run(&["config", "user.name", "Alice Author"]);
     run(&["config", "user.email", "alice@example.com"]);
 
-    // Commit 1: Lines 1-5 by Alice
+    // Commit 1: Lines 1-5 by Alice.
     let lines_c1 = (1..=5)
         .map(|i| format!("Line {} content", i))
         .collect::<Vec<_>>()

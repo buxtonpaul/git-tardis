@@ -111,6 +111,8 @@ pub struct AppState {
     pub status_message: String,
     pub running: bool,
     pub show_help: bool,
+    pub show_splashscreen: bool,
+    pub git_version: Option<String>,
 
     pub grammar_registry: GrammarRegistry,
     pub current_line_blame: Option<BlameLine>,
@@ -122,9 +124,17 @@ pub struct AppState {
 impl AppState {
     pub fn new(repo_path: PathBuf) -> Self {
         let repo = GitRepo::open(&repo_path).ok();
+        let git_version = std::process::Command::new("git")
+            .arg("--version")
+            .output()
+            .ok()
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .map(|s| s.trim().to_string());
+
         Self {
             repo_path,
             repo,
+            git_version,
             active_panel: ActivePanel::Sidebar,
             sidebar_view: SidebarView::FileExplorer,
             nav_mode: NavigationMode::Commit,
@@ -159,6 +169,7 @@ impl AppState {
                 .to_string(),
             running: true,
             show_help: false,
+            show_splashscreen: false,
 
             grammar_registry: GrammarRegistry::new(),
             current_line_blame: None,
@@ -988,6 +999,9 @@ impl AppState {
                 if self.show_help {
                     self.show_help = false;
                     self.status_message = "Closed keybindings help overlay.".to_string();
+                } else if self.show_splashscreen {
+                    self.show_splashscreen = false;
+                    self.status_message = "Closed TARDIS splashscreen.".to_string();
                 } else if self.selected_commit_hash.is_some() {
                     self.reset_time_travel();
                 } else {
@@ -1000,6 +1014,14 @@ impl AppState {
                     self.status_message = "Opened keybindings help overlay.".to_string();
                 } else {
                     self.status_message = "Closed keybindings help overlay.".to_string();
+                }
+            }
+            Action::ToggleSplashscreen => {
+                self.show_splashscreen = !self.show_splashscreen;
+                if self.show_splashscreen {
+                    self.status_message = "Opened TARDIS splashscreen.".to_string();
+                } else {
+                    self.status_message = "Closed TARDIS splashscreen.".to_string();
                 }
             }
             Action::ToggleFocus => self.toggle_panel_focus(),
