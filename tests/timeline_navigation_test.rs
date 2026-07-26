@@ -387,6 +387,36 @@ fn test_candidate_commits_sidebar_navigation() {
 }
 
 #[test]
+fn test_changing_selected_file_updates_candidate_commits() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(&repo, "file_a.txt", "v1\n", "C1: Add file_a");
+    commit_file(&repo, "file_b.txt", "v1\n", "C2: Add file_b");
+    commit_file(&repo, "file_a.txt", "v2\n", "C3: Update file_a");
+    commit_file(&repo, "file_b.txt", "v2\n", "C4: Update file_b");
+
+    let mut app = AppState::new(repo.work_dir().to_path_buf());
+    app.files = vec!["file_a.txt".to_string(), "file_b.txt".to_string()];
+    app.set_navigation_mode(NavigationMode::File);
+    app.file_selected = 0;
+    app.load_currently_selected_file();
+
+    // Candidates for file_a.txt: C3, C1
+    assert_eq!(app.candidate_commits.len(), 2);
+    assert!(app.candidate_commits.iter().any(|(_, msg)| msg.contains("C3")));
+    assert!(app.candidate_commits.iter().any(|(_, msg)| msg.contains("C1")));
+
+    // Move selection down in FileExplorer to file_b.txt
+    app.move_selection_down();
+    assert_eq!(app.file_selected, 1);
+
+    // Candidate commits list should automatically update to file_b.txt candidates (C4, C2)
+    assert_eq!(app.candidate_commits.len(), 2);
+    assert!(app.candidate_commits.iter().any(|(_, msg)| msg.contains("C4")));
+    assert!(app.candidate_commits.iter().any(|(_, msg)| msg.contains("C2")));
+}
+
+#[test]
 fn test_code_viewer_focused_navigation_updates_commit_and_code() {
     let (_dir, repo) = setup_test_repo();
 

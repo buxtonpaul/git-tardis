@@ -445,10 +445,8 @@ impl AppState {
                                 "File '{}' was deleted in commit {}",
                                 clean_path, short_hash
                             );
-                            return;
-                        }
-
-                        if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+                            self.update_current_line_blame();
+                        } else if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
                             if let Ok(content) = repo.get_file_at_commit(hash, clean_path) {
                                 self.code_lines = content.lines().map(|s| s.to_string()).collect();
                                 self.cursor_line = 1;
@@ -457,17 +455,26 @@ impl AppState {
                                 self.status_message =
                                     format!("Loaded {} at commit {}", clean_path, short_hash);
                                 self.update_current_line_blame();
-                                return;
+                            } else {
+                                self.code_lines.clear();
+                                self.cursor_line = 1;
+                                self.code_scroll_offset = 0;
+                                let short_hash = &hash[..7.min(hash.len())];
+                                self.status_message = format!(
+                                    "Could not read {} at commit {}",
+                                    clean_path, short_hash
+                                );
+                                self.update_current_line_blame();
                             }
+                        } else {
+                            self.code_lines.clear();
+                            self.cursor_line = 1;
+                            self.code_scroll_offset = 0;
+                            let short_hash = &hash[..7.min(hash.len())];
+                            self.status_message =
+                                format!("Could not read {} at commit {}", clean_path, short_hash);
+                            self.update_current_line_blame();
                         }
-
-                        self.code_lines.clear();
-                        self.cursor_line = 1;
-                        self.code_scroll_offset = 0;
-                        let short_hash = &hash[..7.min(hash.len())];
-                        self.status_message =
-                            format!("Could not read {} at commit {}", clean_path, short_hash);
-                        self.update_current_line_blame();
                     } else {
                         self.code_lines.clear();
                         self.cursor_line = 1;
@@ -487,22 +494,21 @@ impl AppState {
                             self.status_message =
                                 format!("File '{}' was deleted in working tree", clean_path);
                             self.update_current_line_blame();
-                            return;
-                        }
-
-                        let file_path = self.repo_path.join(clean_path);
-                        if let Ok(content) = std::fs::read_to_string(&file_path) {
-                            self.code_lines = content.lines().map(|s| s.to_string()).collect();
-                            self.cursor_line = 1;
-                            self.code_scroll_offset = 0;
-                            self.status_message = format!("Loaded dirty file: {}", clean_path);
-                            self.update_current_line_blame();
                         } else {
-                            self.code_lines.clear();
-                            self.cursor_line = 1;
-                            self.code_scroll_offset = 0;
-                            self.status_message = format!("Could not read file: {}", clean_path);
-                            self.update_current_line_blame();
+                            let file_path = self.repo_path.join(clean_path);
+                            if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                                self.cursor_line = 1;
+                                self.code_scroll_offset = 0;
+                                self.status_message = format!("Loaded dirty file: {}", clean_path);
+                                self.update_current_line_blame();
+                            } else {
+                                self.code_lines.clear();
+                                self.cursor_line = 1;
+                                self.code_scroll_offset = 0;
+                                self.status_message = format!("Could not read file: {}", clean_path);
+                                self.update_current_line_blame();
+                            }
                         }
                     } else {
                         self.code_lines.clear();
@@ -546,6 +552,8 @@ impl AppState {
                 }
             }
         }
+
+        self.update_candidate_commits();
     }
 
     pub fn current_file_path(&self) -> Option<String> {
