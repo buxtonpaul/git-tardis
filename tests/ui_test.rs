@@ -634,3 +634,74 @@ fn test_diff_line_highlighting_rendering() {
     assert!(dbg_diff.contains("added line"));
     assert!(dbg_diff.contains("deleted line"));
 }
+
+#[test]
+fn test_file_explorer_updates_for_target_commit_and_resets() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path();
+
+    let run = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(repo_path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Test User"]);
+    run(&["config", "user.email", "test@example.com"]);
+
+    // Commit 1: Add file_c1.txt
+    std::fs::write(repo_path.join("file_c1.txt"), "c1 content\n").unwrap();
+    run(&["add", "."]);
+    run(&["commit", "-m", "Commit 1"]);
+
+    // Commit 2: Add file_c2.txt
+    std::fs::write(repo_path.join("file_c2.txt"), "c2 content\n").unwrap();
+    run(&["add", "."]);
+    run(&["commit", "-m", "Commit 2"]);
+
+    let repo = git_tardis::git::GitRepo::open(repo_path).unwrap();
+    let history = repo.get_commit_history(None).unwrap();
+
+    let commit2_hash = history[0].hash.clone(); // latest commit
+    let commit1_hash = history[1].hash.clone(); // earlier commit
+
+    let mut app = AppState::new(repo_path.to_path_buf());
+    app.commits = history
+        .into_iter()
+        .map(git_tardis::app::CommitSummary::from)
+        .collect();
+
+    // Working directory state: initial files list has both file_c1.txt and file_c2.txt
+    app.files = repo.list_files().unwrap();
+    assert_eq!(app.files, vec!["file_c1.txt", "file_c2.txt"]);
+
+    // 1. Enter time travel to Commit 1 (earlier commit)
+    app.update_state_for_commit_hash(commit1_hash.clone());
+
+    // File explorer list must update to reflect only files present at Commit 1
+    assert_eq!(app.selected_commit_hash, Some(commit1_hash));
+    assert_eq!(app.files, vec!["file_c1.txt"]);
+
+    // Selecting file in File Explorer in time-travel mode loads content at target commit
+    app.sidebar_view = SidebarView::FileExplorer;
+    app.file_selected = 0;
+    app.load_currently_selected_file();
+    assert_eq!(app.active_file, Some("file_c1.txt".to_string()));
+    assert_eq!(app.code_lines, vec!["c1 content"]);
+
+    // 2. Switch time travel to Commit 2
+    app.update_state_for_commit_hash(commit2_hash.clone());
+    assert_eq!(app.selected_commit_hash, Some(commit2_hash));
+    assert_eq!(app.files, vec!["file_c1.txt", "file_c2.txt"]);
+
+    // 3. Reset time travel (return to working directory)
+    app.reset_time_travel();
+    assert_eq!(app.selected_commit_hash, None);
+
+    // Working directory files restored
+    assert_eq!(app.files, vec!["file_c1.txt", "file_c2.txt"]);
+}

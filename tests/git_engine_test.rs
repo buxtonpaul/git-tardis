@@ -281,3 +281,26 @@ fn test_get_commit_files() {
     assert_eq!(files_a.len(), 1);
     assert_eq!(files_a[0].path, "file_a.txt");
 }
+
+#[test]
+fn test_list_files_at_commit() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(&repo, "alpha.txt", "alpha content\n", "Add alpha");
+    let c1 = repo.get_commit_history(None).unwrap()[0].hash.clone();
+
+    commit_file(&repo, "beta.txt", "beta content\n", "Add beta");
+    let c2 = repo.get_commit_history(None).unwrap()[0].hash.clone();
+
+    // c1 has alpha.txt
+    let files_c1 = repo
+        .list_files_at_commit(&c1)
+        .expect("list_files_at_commit c1 failed");
+    assert_eq!(files_c1, vec!["alpha.txt"]);
+
+    // c2 has alpha.txt and beta.txt
+    let files_c2 = repo
+        .list_files_at_commit(&c2)
+        .expect("list_files_at_commit c2 failed");
+    assert_eq!(files_c2, vec!["alpha.txt", "beta.txt"]);
+}
