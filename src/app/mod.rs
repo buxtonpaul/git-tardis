@@ -414,151 +414,86 @@ impl AppState {
         match self.sidebar_view {
             SidebarView::FileExplorer => {
                 if let Some(f) = self.files.get(self.file_selected).cloned() {
-                    self.active_file = Some(f.clone());
-                    let file_path = self.repo_path.join(&f);
-                    if let Ok(content) = std::fs::read_to_string(&file_path) {
-                        self.code_lines = content.lines().map(|s| s.to_string()).collect();
-                        self.cursor_line = 1;
-                        self.code_scroll_offset = 0;
-                        self.status_message = format!("Loaded file: {}", f);
-                        self.update_current_line_blame();
-                    } else {
-                        self.code_lines.clear();
-                        self.cursor_line = 1;
-                        self.status_message = format!("Could not read file: {}", f);
-                    }
-                } else {
-                    self.code_lines.clear();
-                    self.cursor_line = 1;
+                    self.active_file = Some(f);
                 }
             }
             SidebarView::ModifiedFiles => {
-                if let Some(hash) = &self.selected_commit_hash {
+                if self.selected_commit_hash.is_some() {
                     if let Some(item) = self.modified_files.get(self.modified_selected).cloned() {
                         let clean_path = item.split_whitespace().next().unwrap_or(&item);
                         self.active_file = Some(clean_path.to_string());
-                        let is_deleted = item.contains("(D)");
-
-                        if is_deleted {
-                            self.code_lines.clear();
-                            self.cursor_line = 1;
-                            let short_hash = &hash[..7.min(hash.len())];
-                            self.status_message = format!(
-                                "File '{}' was deleted in commit {}",
-                                clean_path, short_hash
-                            );
-                            self.update_current_line_blame();
-                        } else if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
-                            if let Ok(content) = repo.get_file_at_commit(hash, clean_path) {
-                                self.code_lines = content.lines().map(|s| s.to_string()).collect();
-                                self.cursor_line = 1;
-                                self.code_scroll_offset = 0;
-                                let short_hash = &hash[..7.min(hash.len())];
-                                self.status_message =
-                                    format!("Loaded {} at commit {}", clean_path, short_hash);
-                                self.update_current_line_blame();
-                            } else {
-                                self.code_lines.clear();
-                                self.cursor_line = 1;
-                                self.code_scroll_offset = 0;
-                                let short_hash = &hash[..7.min(hash.len())];
-                                self.status_message = format!(
-                                    "Could not read {} at commit {}",
-                                    clean_path, short_hash
-                                );
-                                self.update_current_line_blame();
-                            }
-                        } else {
-                            self.code_lines.clear();
-                            self.cursor_line = 1;
-                            self.code_scroll_offset = 0;
-                            let short_hash = &hash[..7.min(hash.len())];
-                            self.status_message =
-                                format!("Could not read {} at commit {}", clean_path, short_hash);
-                            self.update_current_line_blame();
-                        }
-                    } else {
-                        self.code_lines.clear();
-                        self.cursor_line = 1;
-                        self.code_scroll_offset = 0;
-                        self.update_current_line_blame();
                     }
                 } else if let Some(item) = self.dirty_files.get(self.dirty_selected).cloned() {
                     let clean_path = item.split_whitespace().next().unwrap_or(&item);
                     self.active_file = Some(clean_path.to_string());
-                    let is_deleted = item.contains("(D)");
-
-                    if is_deleted {
-                        self.code_lines.clear();
-                        self.cursor_line = 1;
-                        self.code_scroll_offset = 0;
-                        self.status_message =
-                            format!("File '{}' was deleted in working tree", clean_path);
-                        self.update_current_line_blame();
-                    } else {
-                        let file_path = self.repo_path.join(clean_path);
-                        if let Ok(content) = std::fs::read_to_string(&file_path) {
-                            self.code_lines = content.lines().map(|s| s.to_string()).collect();
-                            self.cursor_line = 1;
-                            self.code_scroll_offset = 0;
-                            self.status_message = format!("Loaded dirty file: {}", clean_path);
-                            self.update_current_line_blame();
-                        } else {
-                            self.code_lines.clear();
-                            self.cursor_line = 1;
-                            self.code_scroll_offset = 0;
-                            self.status_message = format!("Could not read file: {}", clean_path);
-                            self.update_current_line_blame();
-                        }
-                    }
-                } else {
-                    self.code_lines.clear();
-                    self.cursor_line = 1;
-                    self.code_scroll_offset = 0;
-                    self.update_current_line_blame();
                 }
             }
             SidebarView::CommitTimeline | SidebarView::TargetCandidates => {
-                if let Some(hash) = self.selected_commit_hash.clone() {
-                    let cur_file = self.current_file_path();
-                    if let Some(clean_path) = cur_file {
-                        let short_hash = &hash[..7.min(hash.len())];
-                        if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
-                            match repo.get_file_at_commit(&hash, &clean_path) {
-                                Ok(content) => {
-                                    self.code_lines =
-                                        content.lines().map(|s| s.to_string()).collect();
-                                    self.cursor_line = 1;
-                                    self.code_scroll_offset = 0;
-                                    self.status_message =
-                                        format!("Loaded {} at commit {}", clean_path, short_hash);
-                                    self.update_current_line_blame();
-                                }
-                                Err(_) => {
-                                    self.code_lines = vec![format!(
-                                        "File '{}' did not exist at commit {}",
-                                        clean_path, short_hash
-                                    )];
-                                    self.cursor_line = 1;
-                                    self.code_scroll_offset = 0;
-                                    self.status_message = format!(
-                                        "File '{}' did not exist at commit {}",
-                                        clean_path, short_hash
-                                    );
-                                    self.update_current_line_blame();
-                                }
-                            }
-                        }
-                    } else {
-                        self.code_lines.clear();
-                        self.cursor_line = 1;
-                        self.code_scroll_offset = 0;
-                        self.update_current_line_blame();
+                if self.active_file.is_none() {
+                    if let Some(item) = self.modified_files.get(self.modified_selected) {
+                        let clean_path = item.split_whitespace().next().unwrap_or(item);
+                        self.active_file = Some(clean_path.to_string());
+                    } else if let Some(f) = self.files.get(self.file_selected) {
+                        self.active_file = Some(f.clone());
                     }
                 }
             }
         }
 
+        let clean_path = match self.current_file_path() {
+            Some(p) => p,
+            None => {
+                self.code_lines.clear();
+                self.cursor_line = 1;
+                self.code_scroll_offset = 0;
+                self.update_current_line_blame();
+                self.update_candidate_commits();
+                self.update_file_diff_highlights();
+                return;
+            }
+        };
+
+        if let Some(hash) = &self.selected_commit_hash {
+            let short_hash = &hash[..7.min(hash.len())];
+            if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+                match repo.get_file_at_commit(hash, &clean_path) {
+                    Ok(content) => {
+                        self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                        self.cursor_line = 1;
+                        self.code_scroll_offset = 0;
+                        self.status_message =
+                            format!("Loaded {} at commit {}", clean_path, short_hash);
+                    }
+                    Err(_) => {
+                        self.code_lines = vec![format!(
+                            "File '{}' did not exist at commit {}",
+                            clean_path, short_hash
+                        )];
+                        self.cursor_line = 1;
+                        self.code_scroll_offset = 0;
+                        self.status_message = format!(
+                            "File '{}' did not exist at commit {}",
+                            clean_path, short_hash
+                        );
+                    }
+                }
+            }
+        } else {
+            let file_path = self.repo_path.join(&clean_path);
+            if let Ok(content) = std::fs::read_to_string(&file_path) {
+                self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                self.cursor_line = 1;
+                self.code_scroll_offset = 0;
+                self.status_message = format!("Loaded file: {}", clean_path);
+            } else {
+                self.code_lines.clear();
+                self.cursor_line = 1;
+                self.code_scroll_offset = 0;
+                self.status_message = format!("Could not read file: {}", clean_path);
+            }
+        }
+
+        self.update_current_line_blame();
         self.update_candidate_commits();
         self.update_file_diff_highlights();
     }
