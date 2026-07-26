@@ -30,7 +30,7 @@ fn test_split_panel_rendering_and_borders() {
     assert!(dbg_str.contains("2: Dirty Files"));
     assert!(dbg_str.contains("3: Commit Timeline"));
     assert!(dbg_str.contains("Sidebar [1: Explorer]"));
-    assert!(dbg_str.contains("Code Viewer - Mode: [FILE Mode]"));
+    assert!(dbg_str.contains("Code Viewer - Mode: [COMMIT Mode]"));
 
     // Check Cyan border for active Sidebar (top-left border cell at (0, 3))
     assert_eq!(buffer[(0, 3)].fg, Color::Cyan);
@@ -74,6 +74,13 @@ fn test_sidebar_tab_views_rendering() {
     terminal.draw(|f| render(f, &app)).unwrap();
     let dbg3 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg3.contains("1234567 commit message"));
+
+    // Tab 4: Target Candidates
+    app.set_sidebar_view(SidebarView::TargetCandidates);
+    app.candidate_commits = vec![("7654321".to_string(), "candidate commit".to_string())];
+    terminal.draw(|f| render(f, &app)).unwrap();
+    let dbg4 = format!("{:?}", terminal.backend().buffer());
+    assert!(dbg4.contains("7654321 candidate commit"));
 }
 
 #[test]
@@ -106,35 +113,21 @@ fn test_keymap_scope_fallback_and_dispatcher() {
     if let Some(act) = action_m {
         app.dispatch_action(act);
     }
-    assert_eq!(app.nav_mode, NavigationMode::Function);
+    assert_eq!(app.nav_mode, NavigationMode::File);
 }
 
 #[test]
-fn test_multi_key_sequence_matching() {
+fn test_immediate_navigation_key_matching() {
     let registry = KeymapRegistry::new();
     let mut dispatcher = KeyDispatcher::new(registry);
 
-    // Sequence ]f in CodeViewer scope
+    // Single ] key in CodeViewer scope immediately matches JumpNextAuto
     let act1 = dispatcher.handle_key(KeyStroke::Char(']'), Scope::CodeViewer);
-    assert_eq!(act1, None); // Ambiguous
+    assert_eq!(act1, Some(Action::JumpNextAuto));
 
-    let act2 = dispatcher.handle_key(KeyStroke::Char('f'), Scope::CodeViewer);
-    assert_eq!(act2, Some(Action::JumpNextFunction));
-
-    // Sequence ]l in CodeViewer scope
-    dispatcher.handle_key(KeyStroke::Char(']'), Scope::CodeViewer);
-    let act3 = dispatcher.handle_key(KeyStroke::Char('l'), Scope::CodeViewer);
-    assert_eq!(act3, Some(Action::JumpNextLine));
-
-    // Sequence ]m in CodeViewer scope
-    dispatcher.handle_key(KeyStroke::Char(']'), Scope::CodeViewer);
-    let act4 = dispatcher.handle_key(KeyStroke::Char('m'), Scope::CodeViewer);
-    assert_eq!(act4, Some(Action::JumpNextFile));
-
-    // Sequence [f in CodeViewer scope
-    dispatcher.handle_key(KeyStroke::Char('['), Scope::CodeViewer);
-    let act5 = dispatcher.handle_key(KeyStroke::Char('f'), Scope::CodeViewer);
-    assert_eq!(act5, Some(Action::JumpPrevFunction));
+    // Single [ key in CodeViewer scope immediately matches JumpPrevAuto
+    let act2 = dispatcher.handle_key(KeyStroke::Char('['), Scope::CodeViewer);
+    assert_eq!(act2, Some(Action::JumpPrevAuto));
 }
 
 #[test]
@@ -517,4 +510,26 @@ fn test_code_viewer_viewport_scrolling_on_cursor_navigation() {
 
     // Line 3 should now be visible at the top of the scrolled viewport
     assert!(dbg3.contains("3 > line 3"));
+}
+
+#[test]
+fn test_commit_timeline_candidate_highlighting() {
+    let backend = TestBackend::new(100, 15);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    let mut app = AppState::new(PathBuf::from("."));
+    app.commits = vec![
+        ("1111111".to_string(), "Candidate Commit".to_string()),
+        ("2222222".to_string(), "Non-candidate Commit".to_string()),
+    ];
+    app.candidate_commits = vec![("1111111".to_string(), "Candidate Commit".to_string())];
+    app.sidebar_view = SidebarView::CommitTimeline;
+
+    terminal.draw(|f| render(f, &app)).unwrap();
+    let dbg = format!("{:?}", terminal.backend().buffer());
+
+    // Candidate commit should have '*' indicator prefix
+    assert!(dbg.contains("* 1111111 Candidate Commit"));
+    // Non-candidate commit should have spaces prefix
+    assert!(dbg.contains("  2222222 Non-candidate Commit"));
 }

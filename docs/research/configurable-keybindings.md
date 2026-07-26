@@ -19,7 +19,6 @@ Keystrokes are parsed from standard Vim string notation into typed Rust data str
 
 ### Supported Notation:
 - **Single Character**: `"j"`, `"k"`, `"q"`, `"]"`, `"["`, `"m"`
-- **Multi-Key Sequences**: `"]f"`, `"[f"`, `"]l"`, `"[l"`, `"]m"`, `"[m"`
 - **Special Keys**: `<Esc>`, `<Tab>`, `<CR>` (Enter), `<Up>`, `<Down>`, `<Left>`, `<Right>`
 - **Control Modifiers**: `<C-d>`, `<C-u>`, `<C-f>`, `<C-b>`
 
@@ -91,14 +90,8 @@ Git-tardis provides both auto-mode jumps and mode-explicit shortcuts:
 
 | Key Binding | Target Scope | Action Enum | Behavior |
 | :--- | :--- | :--- | :--- |
-| `]` | `code_viewer` | `JumpNextAuto` | Jump to next commit using active navigation mode (`File`, `Function`, or `Line`). |
+| `]` | `code_viewer` | `JumpNextAuto` | Jump to next commit using active navigation mode (`Commit`, `File`, `Function`, or `Line`). |
 | `[` | `code_viewer` | `JumpPrevAuto` | Jump to previous commit using active navigation mode. |
-| `]m` | `code_viewer` | `JumpNextFile` | Force jump to next commit modifying the **File**. |
-| `[m` | `code_viewer` | `JumpPrevFile` | Force jump to previous commit modifying the **File**. |
-| `]f` | `code_viewer` | `JumpNextFunction` | Force jump to next commit modifying the enclosing **Function**. |
-| `[f` | `code_viewer` | `JumpPrevFunction` | Force jump to previous commit modifying the enclosing **Function**. |
-| `]l` | `code_viewer` | `JumpNextLine` | Force jump to next commit modifying the cursor **Line** (blame). |
-| `[l` | `code_viewer` | `JumpPrevLine` | Force jump to previous commit modifying the cursor **Line** (blame). |
 
 ---
 
@@ -115,6 +108,7 @@ toggle_focus = ["<Tab>", "h", "l"]
 view_files = "1"
 view_modified = "2"
 view_timeline = "3"
+view_candidates = "4"
 cycle_nav_mode = "m"
 
 [keymaps.sidebar]
@@ -127,8 +121,6 @@ move_up = ["k", "<Up>"]
 move_down = ["j", "<Down>"]
 jump_next = "]"
 jump_prev = "["
-jump_next_file = "]m"
-jump_prev_file = "[m"
 jump_next_function = ["]f", "<C-f>"]
 jump_prev_function = ["[f", "<C-b>"]
 jump_next_line = "]l"

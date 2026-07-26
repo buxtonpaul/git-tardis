@@ -115,6 +115,8 @@ pub enum Action {
     // Timeline navigation actions
     JumpNextAuto,     // Default active mode jump
     JumpPrevAuto,     // Default active mode jump
+    JumpNextCommit,   // Force commit mode jump
+    JumpPrevCommit,   // Force commit mode jump
     JumpNextFile,     // Force file mode jump
     JumpPrevFile,     // Force file mode jump
     JumpNextFunction, // Force function mode jump
@@ -168,6 +170,7 @@ impl KeymapRegistry {
         self.bind(Scope::Global, "1", Action::SetSidebarView(1));
         self.bind(Scope::Global, "2", Action::SetSidebarView(2));
         self.bind(Scope::Global, "3", Action::SetSidebarView(3));
+        self.bind(Scope::Global, "4", Action::SetSidebarView(4));
         self.bind(Scope::Global, "m", Action::CycleNavMode);
 
         // Sidebar scope
@@ -184,18 +187,9 @@ impl KeymapRegistry {
         self.bind(Scope::CodeViewer, "<Down>", Action::MoveDown);
         self.bind(Scope::CodeViewer, "<Up>", Action::MoveUp);
 
-        // Mode-specific timeline navigation shortcuts
+        // Timeline navigation shortcuts
         self.bind(Scope::CodeViewer, "]", Action::JumpNextAuto);
         self.bind(Scope::CodeViewer, "[", Action::JumpPrevAuto);
-
-        self.bind(Scope::CodeViewer, "]m", Action::JumpNextFile);
-        self.bind(Scope::CodeViewer, "[m", Action::JumpPrevFile);
-
-        self.bind(Scope::CodeViewer, "]f", Action::JumpNextFunction);
-        self.bind(Scope::CodeViewer, "[f", Action::JumpPrevFunction);
-
-        self.bind(Scope::CodeViewer, "]l", Action::JumpNextLine);
-        self.bind(Scope::CodeViewer, "[l", Action::JumpPrevLine);
 
         self.bind(Scope::CodeViewer, "e", Action::InlineRewrite);
         self.bind(Scope::CodeViewer, "E", Action::EditHere);
@@ -290,6 +284,18 @@ impl KeymapRegistry {
         bind_list(self, scope, &mappings.select, Action::Select);
         bind_list(self, scope, &mappings.jump_next, Action::JumpNextAuto);
         bind_list(self, scope, &mappings.jump_prev, Action::JumpPrevAuto);
+        bind_list(
+            self,
+            scope,
+            &mappings.jump_next_commit,
+            Action::JumpNextCommit,
+        );
+        bind_list(
+            self,
+            scope,
+            &mappings.jump_prev_commit,
+            Action::JumpPrevCommit,
+        );
         bind_list(self, scope, &mappings.jump_next_file, Action::JumpNextFile);
         bind_list(self, scope, &mappings.jump_prev_file, Action::JumpPrevFile);
         bind_list(
@@ -466,26 +472,21 @@ mod tests {
         let res_global = registry.resolve(Scope::Sidebar, &[KeyStroke::Tab]);
         assert_eq!(res_global, MatchResult::FullMatch(Action::ToggleFocus));
 
-        // Multi-stroke jump function in code viewer
-        let res = registry.resolve(
-            Scope::CodeViewer,
-            &[KeyStroke::Char(']'), KeyStroke::Char('f')],
-        );
-        assert_eq!(res, MatchResult::FullMatch(Action::JumpNextFunction));
-
-        // Ambiguous match for ']'
-        let res_ambig = registry.resolve(Scope::CodeViewer, &[KeyStroke::Char(']')]);
-        assert_eq!(res_ambig, MatchResult::AmbiguousMatch(Action::JumpNextAuto));
+        // Single stroke jump next in code viewer matches immediately
+        let res_jump = registry.resolve(Scope::CodeViewer, &[KeyStroke::Char(']')]);
+        assert_eq!(res_jump, MatchResult::FullMatch(Action::JumpNextAuto));
     }
 
     #[test]
     fn test_dispatcher_sequence_matching() {
-        let registry = KeymapRegistry::new();
+        let mut registry = KeymapRegistry::new();
+        // Bind multi-stroke sequence ]f for testing custom configuration
+        registry.bind(Scope::CodeViewer, "]f", Action::JumpNextFunction);
         let mut dispatcher = KeyDispatcher::new(registry);
 
-        // Step 1: Send ']'
+        // Step 1: Send ']' -> Ambiguous because ]f exists
         let act1 = dispatcher.handle_key(KeyStroke::Char(']'), Scope::CodeViewer);
-        assert_eq!(act1, None); // Buffered because ambiguous
+        assert_eq!(act1, None);
 
         // Step 2: Send 'f' -> completes ']f'
         let act2 = dispatcher.handle_key(KeyStroke::Char('f'), Scope::CodeViewer);
@@ -495,7 +496,9 @@ mod tests {
 
     #[test]
     fn test_dispatcher_ambiguous_timeout() {
-        let registry = KeymapRegistry::new();
+        let mut registry = KeymapRegistry::new();
+        // Bind multi-stroke sequence ]f for testing ambiguous timeout
+        registry.bind(Scope::CodeViewer, "]f", Action::JumpNextFunction);
         let mut dispatcher = KeyDispatcher::new(registry).with_timeout(Duration::from_millis(10));
 
         // Send ']'

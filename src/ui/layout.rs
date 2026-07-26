@@ -33,12 +33,14 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         SidebarView::FileExplorer.name().to_string(),
         tab2_title.clone(),
         SidebarView::CommitTimeline.name().to_string(),
+        SidebarView::TargetCandidates.name().to_string(),
     ];
 
     let selected_tab = match state.sidebar_view {
         SidebarView::FileExplorer => 0,
         SidebarView::ModifiedFiles => 1,
         SidebarView::CommitTimeline => 2,
+        SidebarView::TargetCandidates => 3,
     };
 
     let tabs = Tabs::new(sidebar_titles)
@@ -68,6 +70,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         SidebarView::FileExplorer => SidebarView::FileExplorer.name().to_string(),
         SidebarView::ModifiedFiles => tab2_title,
         SidebarView::CommitTimeline => SidebarView::CommitTimeline.name().to_string(),
+        SidebarView::TargetCandidates => SidebarView::TargetCandidates.name().to_string(),
     };
 
     let sidebar_block = Block::default()
@@ -125,10 +128,43 @@ pub fn render(frame: &mut Frame, state: &AppState) {
                 .iter()
                 .enumerate()
                 .map(|(i, (hash, msg))| {
-                    let text = format!("{} {}", hash, msg);
+                    let is_candidate = state.candidate_commits.iter().any(|(cand_h, _)| {
+                        hash == cand_h || hash.starts_with(cand_h) || cand_h.starts_with(hash)
+                    });
+
+                    let prefix = if is_candidate { "* " } else { "  " };
+                    let text = format!("{}{}", prefix, format!("{} {}", hash, msg));
+
                     let style = if i == state.commit_selected && is_sidebar_active {
-                        Style::default().bg(Color::Blue).fg(Color::White)
+                        Style::default()
+                            .bg(Color::Blue)
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
                     } else if i == state.commit_selected {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else if is_candidate {
+                        Style::default().fg(Color::Cyan)
+                    } else {
+                        Style::default().fg(Color::DarkGray)
+                    };
+                    ListItem::new(text).style(style)
+                })
+                .collect();
+            let list = List::new(items).block(sidebar_block);
+            frame.render_widget(list, main_chunks[0]);
+        }
+        SidebarView::TargetCandidates => {
+            let items: Vec<ListItem> = state
+                .candidate_commits
+                .iter()
+                .enumerate()
+                .map(|(i, (hash, msg))| {
+                    let text = format!("{} {}", hash, msg);
+                    let style = if i == state.candidate_selected && is_sidebar_active {
+                        Style::default().bg(Color::Blue).fg(Color::White)
+                    } else if i == state.candidate_selected {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default()
@@ -271,7 +307,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 
     // 3. Footer Status Bar
     let status_text = format!(
-        " Status: {} | Keys: [Tab] Switch Panel | [1/2/3] Sidebar View | [m] Nav Mode | [q] Quit",
+        " Status: {} | Keys: [Tab] Switch Panel | [1/2/3/4] Sidebar View | [m] Nav Mode | [q] Quit",
         state.status_message
     );
     let status_bar = Paragraph::new(status_text)
@@ -306,7 +342,7 @@ mod tests {
         assert!(content.contains("2: Dirty Files"));
         assert!(content.contains("3: Commit Timeline"));
         assert!(content.contains("Sidebar [1: Explorer]"));
-        assert!(content.contains("Code Viewer - Mode: [FILE Mode]"));
+        assert!(content.contains("Code Viewer - Mode: [COMMIT Mode]"));
         assert!(content.contains("src/main.rs"));
         assert!(content.contains("fn main() {}"));
     }

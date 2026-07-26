@@ -34,6 +34,8 @@ pub struct ScopeKeymapConfig {
     pub select: Option<KeyBindingConfig>,
     pub jump_next: Option<KeyBindingConfig>,
     pub jump_prev: Option<KeyBindingConfig>,
+    pub jump_next_commit: Option<KeyBindingConfig>,
+    pub jump_prev_commit: Option<KeyBindingConfig>,
     pub jump_next_file: Option<KeyBindingConfig>,
     pub jump_prev_file: Option<KeyBindingConfig>,
     pub jump_next_function: Option<KeyBindingConfig>,

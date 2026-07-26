@@ -6,6 +6,7 @@ use crate::treesitter::scope::find_enclosing_function_range;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JumpScope {
+    Commit,
     File,
     Function,
     Line,
@@ -22,6 +23,7 @@ pub struct TimelineJumpResult {
     pub commit_hash: String,
     pub short_hash: String,
     pub commit_summary: String,
+    pub file_path: String,
     pub code_lines: Vec<String>,
     pub status_message: String,
     pub scope: JumpScope,
@@ -63,6 +65,9 @@ impl TimelineNavigator {
 
         // 1. Fetch relevant commit history for the requested scope
         let commits = match scope {
+            JumpScope::Commit => repo
+                .get_commit_history(None)
+                .map_err(|e| format!("Failed to get commit history: {:?}", e))?,
             JumpScope::File => repo
                 .get_file_commits(file_path, None)
                 .map_err(|e| format!("Failed to get file commits for {}: {:?}", file_path, e))?,
@@ -158,19 +163,39 @@ impl TimelineNavigator {
             None => return Ok(None),
         };
 
-        // 4. Load file contents at target commit
-        let content = repo
-            .get_file_at_commit(&target_commit.hash, file_path)
-            .map_err(|e| {
-                format!(
-                    "Failed to read file {} at commit {}: {:?}",
-                    file_path, target_commit.short_hash, e
-                )
-            })?;
+        // 4. Load file contents at target commit (fallback to first modified file if file didn't exist in Commit scope)
+        let mut target_file_path = file_path.to_string();
+        let content = match repo.get_file_at_commit(&target_commit.hash, file_path) {
+            Ok(content) => content,
+            Err(e) => {
+                if scope == JumpScope::Commit {
+                    let commit_files = repo.get_commit_files(&target_commit.hash).map_err(|cf_err| {
+                        format!("Failed to read file {} at commit {}: {:?} (failed fetching commit files: {:?})", file_path, target_commit.short_hash, e, cf_err)
+                    })?;
+                    if let Some(first) = commit_files.iter().find(|f| !f.status_code().contains('D')) {
+                        target_file_path = first.path.clone();
+                        repo.get_file_at_commit(&target_commit.hash, &target_file_path).map_err(|read_err| {
+                            format!("Failed to read fallback file {} at commit {}: {:?}", target_file_path, target_commit.short_hash, read_err)
+                        })?
+                    } else {
+                        return Err(format!(
+                            "File {} did not exist at commit {}, and no valid modified file found",
+                            file_path, target_commit.short_hash
+                        ));
+                    }
+                } else {
+                    return Err(format!(
+                        "Failed to read file {} at commit {}: {:?}",
+                        file_path, target_commit.short_hash, e
+                    ));
+                }
+            }
+        };
 
         let code_lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 
         let scope_desc = match scope {
+            JumpScope::Commit => "COMMIT".to_string(),
             JumpScope::File => "FILE".to_string(),
             JumpScope::Function => {
                 if let Some((s, e)) = function_range {
@@ -196,6 +221,7 @@ impl TimelineNavigator {
             commit_hash: target_commit.hash.clone(),
             short_hash: target_commit.short_hash.clone(),
             commit_summary: target_commit.summary.clone(),
+            file_path: target_file_path,
             code_lines,
             status_message,
             scope,

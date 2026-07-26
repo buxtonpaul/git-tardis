@@ -13,7 +13,8 @@
 **Git-tardis** is a high-performance terminal utility and Neovim extension written in Rust that enables instant "time travel" through a repository's Git history. It allows developers to seamlessly navigate code back and forth across commits at the file, function, or line level, and perform historical edits directly without breaking flow or manually manipulating Git reflogs.
 
 ### 1.2 Core Target Capabilities
-1. **Multi-Scope Timeline Navigation**: Jump between historical states of the active repository at three distinct granularities:
+1. **Multi-Scope Timeline Navigation**: Jump between historical states of the active repository at four distinct granularities:
+   - **Commit Scope**: Step through commits in the branch's overall Git history.
    - **File Scope**: Step through commits modifying the open file.
    - **Function Scope**: Step through commits modifying the specific enclosing function/method under the editor cursor using Tree-sitter AST queries.
    - **Line Scope**: Step through commits modifying the line under the cursor (blame history).
@@ -186,10 +187,12 @@ pub enum SidebarView {
     FileExplorer,
     ModifiedFiles,
     CommitTimeline,
+    TargetCandidates,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavigationMode {
+    Commit,
     File,
     Function,
     Line,
@@ -221,7 +224,7 @@ pub struct AppState {
 ### 5.2 Ratatui Split Geometry
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│ Header & View Selector (Tabs: 1: Explorer | 2: Modified | 3: Timeline)  │ Length(3)
+│ Header & View Selector (Tabs: 1: Explorer | 2: Modified | 3: Timeline | 4: Candidates) │ Length(3)
 ├──────────────────────────────────┬─────────────────────────────────────┤
 │ Left Sidebar (32% Width)         │ Right Code Viewer (68% Width)       │
 │                                  │                                     │
@@ -238,13 +241,12 @@ pub struct AppState {
 | :--- | :--- | :--- | :--- |
 | **Global** | `q`, `<Esc>` | `Quit` | Exit application |
 | **Global** | `<Tab>`, `h`, `l`, `<Left>`, `<Right>` | `ToggleFocus` | Swap panel focus (`Sidebar` $\leftrightarrow$ `CodeViewer`) |
-| **Global** | `1`, `2`, `3` | `SetSidebarView` | Switch `SidebarView` tab (`Explorer`, `Modified`, `Timeline`) |
-| **Global** | `m` | `CycleNavMode` | Cycle `NavigationMode` (`File` $\rightarrow$ `Function` $\rightarrow$ `Line` $\rightarrow$ `File`) |
-| **Sidebar Scope** | `j`, `k`, `<Up>`, `<Down>` | `MoveUp` / `MoveDown` | Navigate selected list item in active sidebar view |
+| **Global** | `1`, `2`, `3`, `4` | `SetSidebarView` | Switch `SidebarView` tab (`Explorer`, `Modified`, `Timeline`, `Candidates`) |
+| **Global** | `m` | `CycleNavMode` | Cycle `NavigationMode` (`Commit` $\rightarrow$ `File` $\rightarrow$ `Function` $\rightarrow$ `Line` $\rightarrow$ `Commit`) |
+| **Sidebar Scope** | `j`, `k`, `<Up>`, `<Down>` | `MoveUp` / `MoveDown` | Navigate selected list item in active sidebar view (updates file viewer immediately in timeline/candidates view) |
 | **Sidebar Scope** | `<CR>` | `Select` | Open selected file or inspect commit |
 | **Code Viewer Scope** | `j`, `k`, `<Up>`, `<Down>` | `MoveUp` / `MoveDown` | Move code cursor line up/down |
 | **Code Viewer Scope** | `]`, `[` | `JumpNextAuto` / `JumpPrevAuto` | Execute timeline jump (`next`/`previous` commit) based on active `nav_mode` |
-| **Code Viewer Scope** | `]m`, `[m` | `JumpNextFile` / `JumpPrevFile` | Force jump to `next`/`previous` commit modifying the open **File** |
 | **Code Viewer Scope** | `]f`, `[f` | `JumpNextFunction` / `JumpPrevFunction` | Force jump to `next`/`previous` commit modifying enclosing **Function** |
 | **Code Viewer Scope** | `]l`, `[l` | `JumpNextLine` / `JumpPrevLine` | Force jump to `next`/`previous` commit modifying cursor **Line** (blame) |
 | **Code Viewer Scope** | `e` | `InlineRewrite` | Trigger "Inline rewrite" on target commit |
@@ -254,6 +256,22 @@ pub struct AppState {
 - **Keymap Hierarchy Engine**: Key events are checked against the active panel scope (`code_viewer` or `sidebar`) first, falling back to `global` scope.
 - **Multi-Key Disambiguation**: Supports multi-stroke shortcuts (e.g. `]` vs `]f`). Disambiguates exact matches vs prefixes using `AmbiguousMatch` state with a 500ms timeout buffer (`timeoutlen`).
 - **TOML & Neovim Lua Configuration**: Fully customizable via `~/.config/git-tardis/config.toml` and Neovim `setup()` keymap tables. See [`docs/research/configurable-keybindings.md`](research/configurable-keybindings.md).
+
+### 5.5 Operating Behavior & Time Travel Synchronization Specs
+As defined in `time-travel.md`:
+1. **Time Travel Modes**:
+   - **Commit-based**: Steps sequentially through all commits in the branch's Git history.
+   - **File-based**: Steps through commits that modified the currently displayed file.
+   - **Function-based**: Steps through commits that modified the function enclosing the cursor position.
+   - **Line-based**: Steps through commits that modified the cursor line (blame history).
+2. **Commit-based Fallback Handling**:
+   - When jumping to a target commit in Commit-based mode, Git-tardis attempts to view the currently open file as it existed at that commit.
+   - If the currently open file did not exist at the target commit, Git-tardis automatically switches view to the first modified file of that target commit.
+3. **Explorer Pane & File Viewer Synchronization**:
+   - **Target Candidates Tab**: Displays the list of candidate commits reachable based on the current navigation mode (`Commit`, `File`, `Function`, or `Line`). Moving the cursor up/down the list changes the target commit and immediately reloads the File Viewer Pane.
+   - **Commit Timeline Candidate Highlighting**: In the full Commit Timeline view (`3: Commit Timeline`), candidate commits matching the active navigation mode are visually highlighted (with a `*` prefix indicator and distinct Cyan text color) to show candidate occurrences in full branch history.
+   - **Explorer -> Viewer**: Moving cursor up/down in the Explorer Pane (`SidebarView::CommitTimeline` or `SidebarView::TargetCandidates`) updates the target commit and immediately reloads the File Viewer Pane. If the current file did not exist at that commit, the viewer displays informative text stating the file did not exist at that commit.
+   - **Viewer -> Explorer**: When target commit changes due to navigation key events in the File Viewer Pane (`]`, `[`), the Explorer Pane updates its selected commit index, candidate list, and modified files list accordingly.
 
 ---
 

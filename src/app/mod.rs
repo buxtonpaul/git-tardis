@@ -17,6 +17,7 @@ pub enum SidebarView {
     FileExplorer,
     ModifiedFiles,
     CommitTimeline,
+    TargetCandidates,
 }
 
 impl SidebarView {
@@ -25,6 +26,7 @@ impl SidebarView {
             SidebarView::FileExplorer => "1: Explorer",
             SidebarView::ModifiedFiles => "2: Modified Files",
             SidebarView::CommitTimeline => "3: Commit Timeline",
+            SidebarView::TargetCandidates => "4: Candidates",
         }
     }
 
@@ -32,7 +34,8 @@ impl SidebarView {
         match self {
             SidebarView::FileExplorer => SidebarView::ModifiedFiles,
             SidebarView::ModifiedFiles => SidebarView::CommitTimeline,
-            SidebarView::CommitTimeline => SidebarView::FileExplorer,
+            SidebarView::CommitTimeline => SidebarView::TargetCandidates,
+            SidebarView::TargetCandidates => SidebarView::FileExplorer,
         }
     }
 }
@@ -40,6 +43,7 @@ impl SidebarView {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NavigationMode {
     #[default]
+    Commit,
     File,
     Function,
     Line,
@@ -48,6 +52,7 @@ pub enum NavigationMode {
 impl NavigationMode {
     pub fn name(&self) -> &'static str {
         match self {
+            NavigationMode::Commit => "COMMIT Mode",
             NavigationMode::File => "FILE Mode",
             NavigationMode::Function => "FUNCTION Mode",
             NavigationMode::Line => "LINE Mode",
@@ -56,9 +61,10 @@ impl NavigationMode {
 
     pub fn cycle(&self) -> Self {
         match self {
+            NavigationMode::Commit => NavigationMode::File,
             NavigationMode::File => NavigationMode::Function,
             NavigationMode::Function => NavigationMode::Line,
-            NavigationMode::Line => NavigationMode::File,
+            NavigationMode::Line => NavigationMode::Commit,
         }
     }
 }
@@ -68,6 +74,7 @@ pub struct AppState {
     pub active_panel: ActivePanel,
     pub sidebar_view: SidebarView,
     pub nav_mode: NavigationMode,
+    pub active_file: Option<String>,
 
     pub files: Vec<String>,
     pub file_selected: usize,
@@ -82,6 +89,8 @@ pub struct AppState {
 
     pub commits: Vec<(String, String)>,
     pub commit_selected: usize,
+    pub candidate_commits: Vec<(String, String)>,
+    pub candidate_selected: usize,
     pub selected_commit_hash: Option<String>,
 
     pub code_lines: Vec<String>,
@@ -101,7 +110,8 @@ impl AppState {
             repo_path,
             active_panel: ActivePanel::Sidebar,
             sidebar_view: SidebarView::FileExplorer,
-            nav_mode: NavigationMode::File,
+            nav_mode: NavigationMode::Commit,
+            active_file: None,
 
             files: Vec::new(),
             file_selected: 0,
@@ -116,6 +126,8 @@ impl AppState {
 
             commits: Vec::new(),
             commit_selected: 0,
+            candidate_commits: Vec::new(),
+            candidate_selected: 0,
             selected_commit_hash: None,
 
             code_lines: Vec::new(),
@@ -141,17 +153,22 @@ impl AppState {
 
     pub fn set_sidebar_view(&mut self, view: SidebarView) {
         self.sidebar_view = view;
+        if view == SidebarView::TargetCandidates {
+            self.update_candidate_commits();
+        }
         self.load_currently_selected_file();
         self.status_message = format!("Sidebar view: {}", view.name());
     }
 
     pub fn cycle_navigation_mode(&mut self) {
         self.nav_mode = self.nav_mode.cycle();
+        self.update_candidate_commits();
         self.status_message = format!("Navigation mode: {}", self.nav_mode.name());
     }
 
     pub fn set_navigation_mode(&mut self, mode: NavigationMode) {
         self.nav_mode = mode;
+        self.update_candidate_commits();
         self.status_message = format!("Navigation mode: {}", mode.name());
     }
 
@@ -185,6 +202,17 @@ impl AppState {
                     if !self.commits.is_empty() && self.commit_selected + 1 < self.commits.len() {
                         self.commit_selected += 1;
                         self.update_modified_files_for_selected_commit();
+                        self.load_currently_selected_file();
+                    }
+                }
+                SidebarView::TargetCandidates => {
+                    if !self.candidate_commits.is_empty()
+                        && self.candidate_selected + 1 < self.candidate_commits.len()
+                    {
+                        self.candidate_selected += 1;
+                        let (hash, _) = self.candidate_commits[self.candidate_selected].clone();
+                        self.update_state_for_commit_hash(hash);
+                        self.load_currently_selected_file();
                     }
                 }
             },
@@ -192,6 +220,7 @@ impl AppState {
                 if !self.code_lines.is_empty() && self.cursor_line < self.code_lines.len() {
                     self.cursor_line += 1;
                     self.update_current_line_blame();
+                    self.update_candidate_commits();
                 }
             }
         }
@@ -223,6 +252,15 @@ impl AppState {
                     if self.commit_selected > 0 {
                         self.commit_selected -= 1;
                         self.update_modified_files_for_selected_commit();
+                        self.load_currently_selected_file();
+                    }
+                }
+                SidebarView::TargetCandidates => {
+                    if self.candidate_selected > 0 {
+                        self.candidate_selected -= 1;
+                        let (hash, _) = self.candidate_commits[self.candidate_selected].clone();
+                        self.update_state_for_commit_hash(hash);
+                        self.load_currently_selected_file();
                     }
                 }
             },
@@ -230,6 +268,7 @@ impl AppState {
                 if self.cursor_line > 1 {
                     self.cursor_line -= 1;
                     self.update_current_line_blame();
+                    self.update_candidate_commits();
                 }
             }
         }
@@ -237,6 +276,70 @@ impl AppState {
 
     pub fn quit(&mut self) {
         self.running = false;
+    }
+
+    pub fn update_candidate_commits(&mut self) {
+        let repo = match crate::git::GitRepo::open(&self.repo_path) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        let cur_file = self.current_file_path();
+
+        let commits_res = match self.nav_mode {
+            NavigationMode::Commit => repo.get_commit_history(None),
+            NavigationMode::File => {
+                if let Some(f) = &cur_file {
+                    repo.get_file_commits(f, None)
+                } else {
+                    repo.get_commit_history(None)
+                }
+            }
+            NavigationMode::Function => {
+                if let Some(f) = &cur_file {
+                    let source_code = self.code_lines.join("\n");
+                    let range = crate::treesitter::scope::find_enclosing_function_range(
+                        &self.grammar_registry,
+                        f,
+                        &source_code,
+                        self.cursor_line,
+                    );
+                    if let Ok(Some((start_l, end_l))) = range {
+                        repo.get_line_commits(f, start_l, end_l, None)
+                    } else {
+                        repo.get_file_commits(f, None)
+                    }
+                } else {
+                    repo.get_commit_history(None)
+                }
+            }
+            NavigationMode::Line => {
+                if let Some(f) = &cur_file {
+                    repo.get_line_commits(f, self.cursor_line, self.cursor_line, None)
+                } else {
+                    repo.get_commit_history(None)
+                }
+            }
+        };
+
+        if let Ok(commits) = commits_res {
+            self.candidate_commits = commits
+                .into_iter()
+                .map(|c| (c.short_hash, c.summary))
+                .collect();
+
+            if let Some(hash) = &self.selected_commit_hash {
+                if let Some(idx) = self.candidate_commits.iter().position(|(h, _)| {
+                    h == hash || hash.starts_with(h) || h.starts_with(hash)
+                }) {
+                    self.candidate_selected = idx;
+                } else {
+                    self.candidate_selected = 0;
+                }
+            } else {
+                self.candidate_selected = 0;
+            }
+        }
     }
 
     pub fn update_modified_files_for_selected_commit(&mut self) {
@@ -258,6 +361,14 @@ impl AppState {
             .position(|(h, _)| h == &hash || hash.starts_with(h) || h.starts_with(&hash))
         {
             self.commit_selected = idx;
+        }
+
+        if let Some(idx) = self
+            .candidate_commits
+            .iter()
+            .position(|(h, _)| h == &hash || hash.starts_with(h) || h.starts_with(&hash))
+        {
+            self.candidate_selected = idx;
         }
 
         // Fetch modified files for this commit
@@ -295,6 +406,7 @@ impl AppState {
         match self.sidebar_view {
             SidebarView::FileExplorer => {
                 if let Some(f) = self.files.get(self.file_selected).cloned() {
+                    self.active_file = Some(f.clone());
                     let file_path = self.repo_path.join(&f);
                     if let Ok(content) = std::fs::read_to_string(&file_path) {
                         self.code_lines = content.lines().map(|s| s.to_string()).collect();
@@ -316,6 +428,7 @@ impl AppState {
                 if let Some(hash) = &self.selected_commit_hash {
                     if let Some(item) = self.modified_files.get(self.modified_selected).cloned() {
                         let clean_path = item.split_whitespace().next().unwrap_or(&item);
+                        self.active_file = Some(clean_path.to_string());
                         let is_deleted = item.contains("(D)");
 
                         if is_deleted {
@@ -358,6 +471,7 @@ impl AppState {
                 } else {
                     if let Some(item) = self.dirty_files.get(self.dirty_selected).cloned() {
                         let clean_path = item.split_whitespace().next().unwrap_or(&item);
+                        self.active_file = Some(clean_path.to_string());
                         let is_deleted = item.contains("(D)");
 
                         if is_deleted {
@@ -392,37 +506,36 @@ impl AppState {
                     }
                 }
             }
-            SidebarView::CommitTimeline => {
-                if let Some(hash) = &self.selected_commit_hash {
-                    if let Some(item) = self.modified_files.get(self.modified_selected).cloned() {
-                        let clean_path = item.split_whitespace().next().unwrap_or(&item);
-                        let is_deleted = item.contains("(D)");
-
-                        if is_deleted {
-                            self.code_lines.clear();
-                            self.cursor_line = 1;
-                            self.code_scroll_offset = 0;
-                            let short_hash = &hash[..7.min(hash.len())];
-                            self.status_message = format!(
-                                "File '{}' was deleted in commit {}",
-                                clean_path, short_hash
-                            );
-                            self.update_current_line_blame();
-                            return;
-                        }
-
+            SidebarView::CommitTimeline | SidebarView::TargetCandidates => {
+                if let Some(hash) = self.selected_commit_hash.clone() {
+                    let cur_file = self.current_file_path();
+                    if let Some(clean_path) = cur_file {
+                        let short_hash = &hash[..7.min(hash.len())];
                         if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
-                            if let Ok(content) = repo.get_file_at_commit(hash, clean_path) {
-                                self.code_lines = content.lines().map(|s| s.to_string()).collect();
-                                self.cursor_line = 1;
-                                self.code_scroll_offset = 0;
-                                let short_hash = &hash[..7.min(hash.len())];
-                                self.status_message =
-                                    format!("Loaded {} at commit {}", clean_path, short_hash);
-                                self.update_current_line_blame();
-                                return;
+                            match repo.get_file_at_commit(&hash, &clean_path) {
+                                Ok(content) => {
+                                    self.code_lines = content.lines().map(|s| s.to_string()).collect();
+                                    self.cursor_line = 1;
+                                    self.code_scroll_offset = 0;
+                                    self.status_message =
+                                        format!("Loaded {} at commit {}", clean_path, short_hash);
+                                    self.update_current_line_blame();
+                                }
+                                Err(_) => {
+                                    self.code_lines = vec![format!("File '{}' did not exist at commit {}", clean_path, short_hash)];
+                                    self.cursor_line = 1;
+                                    self.code_scroll_offset = 0;
+                                    self.status_message =
+                                        format!("File '{}' did not exist at commit {}", clean_path, short_hash);
+                                    self.update_current_line_blame();
+                                }
                             }
                         }
+                    } else {
+                        self.code_lines.clear();
+                        self.cursor_line = 1;
+                        self.code_scroll_offset = 0;
+                        self.update_current_line_blame();
                     }
                 }
             }
@@ -430,6 +543,9 @@ impl AppState {
     }
 
     pub fn current_file_path(&self) -> Option<String> {
+        if let Some(f) = &self.active_file {
+            return Some(f.clone());
+        }
         match self.sidebar_view {
             SidebarView::FileExplorer => self.files.get(self.file_selected).cloned(),
             SidebarView::ModifiedFiles => {
@@ -443,7 +559,7 @@ impl AppState {
                         .map(|item| item.split_whitespace().next().unwrap_or(item).to_string())
                 }
             }
-            SidebarView::CommitTimeline => {
+            SidebarView::CommitTimeline | SidebarView::TargetCandidates => {
                 if let Some(item) = self.modified_files.get(self.modified_selected) {
                     Some(item.split_whitespace().next().unwrap_or(item).to_string())
                 } else {
@@ -478,6 +594,7 @@ impl AppState {
         ) {
             Ok(Some(result)) => {
                 self.update_state_for_commit_hash(result.commit_hash);
+                self.active_file = Some(result.file_path);
                 self.code_lines = result.code_lines;
                 self.code_scroll_offset = 0;
                 if self.code_lines.is_empty() {
@@ -577,6 +694,7 @@ impl AppState {
                 1 => self.set_sidebar_view(SidebarView::FileExplorer),
                 2 => self.set_sidebar_view(SidebarView::ModifiedFiles),
                 3 => self.set_sidebar_view(SidebarView::CommitTimeline),
+                4 => self.set_sidebar_view(SidebarView::TargetCandidates),
                 _ => {}
             },
             Action::CycleNavMode => self.cycle_navigation_mode(),
@@ -598,9 +716,24 @@ impl AppState {
                         self.status_message = "No commit selected".to_string();
                     }
                 }
+                SidebarView::TargetCandidates => {
+                    if let Some((hash, msg)) =
+                        self.candidate_commits.get(self.candidate_selected).cloned()
+                    {
+                        self.selected_commit_hash = Some(hash.clone());
+                        self.update_modified_files_for_selected_commit();
+                        self.sidebar_view = SidebarView::ModifiedFiles;
+                        self.load_currently_selected_file();
+                        self.status_message =
+                            format!("Viewing candidate commit {} ({})", hash, msg);
+                    } else {
+                        self.status_message = "No candidate commit selected".to_string();
+                    }
+                }
             },
             Action::JumpNextAuto => {
                 let scope = match self.nav_mode {
+                    NavigationMode::Commit => crate::timeline::JumpScope::Commit,
                     NavigationMode::File => crate::timeline::JumpScope::File,
                     NavigationMode::Function => crate::timeline::JumpScope::Function,
                     NavigationMode::Line => crate::timeline::JumpScope::Line,
@@ -609,11 +742,24 @@ impl AppState {
             }
             Action::JumpPrevAuto => {
                 let scope = match self.nav_mode {
+                    NavigationMode::Commit => crate::timeline::JumpScope::Commit,
                     NavigationMode::File => crate::timeline::JumpScope::File,
                     NavigationMode::Function => crate::timeline::JumpScope::Function,
                     NavigationMode::Line => crate::timeline::JumpScope::Line,
                 };
                 self.perform_timeline_jump(scope, crate::timeline::JumpDirection::Previous);
+            }
+            Action::JumpNextCommit => {
+                self.perform_timeline_jump(
+                    crate::timeline::JumpScope::Commit,
+                    crate::timeline::JumpDirection::Next,
+                );
+            }
+            Action::JumpPrevCommit => {
+                self.perform_timeline_jump(
+                    crate::timeline::JumpScope::Commit,
+                    crate::timeline::JumpDirection::Previous,
+                );
             }
             Action::JumpNextFile => {
                 self.perform_timeline_jump(
@@ -671,7 +817,7 @@ mod tests {
         assert_eq!(app.repo_path, PathBuf::from("/test/repo"));
         assert_eq!(app.active_panel, ActivePanel::Sidebar);
         assert_eq!(app.sidebar_view, SidebarView::FileExplorer);
-        assert_eq!(app.nav_mode, NavigationMode::File);
+        assert_eq!(app.nav_mode, NavigationMode::Commit);
         assert!(app.running);
     }
 
@@ -690,6 +836,9 @@ mod tests {
     #[test]
     fn test_navigation_mode_cycle() {
         let mut app = AppState::new(PathBuf::from("."));
+        assert_eq!(app.nav_mode, NavigationMode::Commit);
+
+        app.cycle_navigation_mode();
         assert_eq!(app.nav_mode, NavigationMode::File);
 
         app.cycle_navigation_mode();
@@ -699,7 +848,7 @@ mod tests {
         assert_eq!(app.nav_mode, NavigationMode::Line);
 
         app.cycle_navigation_mode();
-        assert_eq!(app.nav_mode, NavigationMode::File);
+        assert_eq!(app.nav_mode, NavigationMode::Commit);
     }
 
     #[test]

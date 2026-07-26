@@ -236,8 +236,15 @@ fn test_auto_mode_timeline_navigation() {
     app.files = vec!["test.rs".to_string()];
     app.load_currently_selected_file();
 
-    // Default mode: File mode
+    // Default mode: Commit mode
+    assert_eq!(app.nav_mode, NavigationMode::Commit);
+    app.dispatch_action(Action::JumpPrevAuto);
+    assert!(app.status_message.contains("COMMIT"));
+
+    // Cycle to File mode
+    app.cycle_navigation_mode();
     assert_eq!(app.nav_mode, NavigationMode::File);
+    app.selected_commit_hash = None;
     app.dispatch_action(Action::JumpPrevAuto);
     assert!(app.status_message.contains("FILE"));
 
@@ -281,6 +288,102 @@ fn test_timeline_navigator_direct_api() {
 
     assert_eq!(res.code_lines, vec!["v2"]);
     assert_eq!(res.commit_summary, "Commit 2");
+}
+
+#[test]
+fn test_commit_mode_timeline_navigation_and_fallback() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(&repo, "first.txt", "first file v1\n", "C1: Add first");
+    commit_file(&repo, "second.txt", "second file v1\n", "C2: Add second");
+    commit_file(&repo, "first.txt", "first file v2\n", "C3: Modify first");
+
+    let history = repo.get_commit_history(None).unwrap();
+
+    let mut app = AppState::new(repo.work_dir().to_path_buf());
+    app.files = vec!["first.txt".to_string(), "second.txt".to_string()];
+    app.commits = history
+        .into_iter()
+        .map(|c| (c.hash[..7.min(c.hash.len())].to_string(), c.summary))
+        .collect();
+    app.load_currently_selected_file();
+
+    // Initially viewing first.txt
+    assert_eq!(app.code_lines, vec!["first file v2"]);
+
+    // Jump PREV in Commit mode -> C3 ("Modify first")
+    app.dispatch_action(Action::JumpPrevCommit);
+    assert_eq!(app.code_lines, vec!["first file v2"]);
+
+    // Jump PREV in Commit mode -> C2 ("Add second", which did not modify first.txt, but first.txt existed)
+    app.dispatch_action(Action::JumpPrevCommit);
+    assert_eq!(app.code_lines, vec!["first file v1"]);
+
+    // Jump PREV in Commit mode -> C1 ("Add first")
+    app.dispatch_action(Action::JumpPrevCommit);
+    assert_eq!(app.code_lines, vec!["first file v1"]);
+}
+
+#[test]
+fn test_commit_timeline_explorer_navigation_reloads_code() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(&repo, "app.txt", "app v1\n", "C1: Initial app");
+    commit_file(&repo, "app.txt", "app v2\n", "C2: Update app");
+
+    let history = repo.get_commit_history(None).unwrap();
+
+    let mut app = AppState::new(repo.work_dir().to_path_buf());
+    app.files = vec!["app.txt".to_string()];
+    app.commits = history
+        .into_iter()
+        .map(|c| (c.hash[..7.min(c.hash.len())].to_string(), c.summary))
+        .collect();
+    app.sidebar_view = git_tardis::app::SidebarView::CommitTimeline;
+    app.file_selected = 0;
+    app.load_currently_selected_file();
+
+    // Initially selected commit 0 (C2)
+    app.update_modified_files_for_selected_commit();
+    app.load_currently_selected_file();
+    assert_eq!(app.code_lines, vec!["app v2"]);
+
+    // Move selection down in CommitTimeline -> commit 1 (C1)
+    app.move_selection_down();
+    assert_eq!(app.commit_selected, 1);
+    assert_eq!(app.code_lines, vec!["app v1"]);
+}
+
+#[test]
+fn test_candidate_commits_sidebar_navigation() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(&repo, "file_a.txt", "v1\n", "C1: Add file_a");
+    commit_file(&repo, "file_b.txt", "v1\n", "C2: Add file_b");
+    commit_file(&repo, "file_a.txt", "v2\n", "C3: Update file_a");
+
+    let mut app = AppState::new(repo.work_dir().to_path_buf());
+    app.files = vec!["file_a.txt".to_string(), "file_b.txt".to_string()];
+    app.load_currently_selected_file();
+
+    // Switch to File mode
+    app.set_navigation_mode(NavigationMode::File);
+    // Switch to Tab 4 (Target Candidates)
+    app.set_sidebar_view(git_tardis::app::SidebarView::TargetCandidates);
+
+    // Candidates in File mode for file_a.txt should only include C3 and C1 (2 commits)
+    assert_eq!(app.candidate_commits.len(), 2);
+    assert!(app.candidate_commits[0].1.contains("C3"));
+    assert!(app.candidate_commits[1].1.contains("C1"));
+
+    // Navigating down in TargetCandidates switches to candidate 1 (C1)
+    app.move_selection_down();
+    assert_eq!(app.candidate_selected, 1);
+    assert_eq!(app.code_lines, vec!["v1"]);
+
+    // Switching to Commit mode updates candidates to all 3 commits
+    app.set_navigation_mode(NavigationMode::Commit);
+    assert_eq!(app.candidate_commits.len(), 3);
 }
 
 #[test]
