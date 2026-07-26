@@ -1,10 +1,12 @@
 pub mod blame;
 pub mod diff;
+pub mod diff_parser;
 pub mod log;
 pub mod status;
 pub mod types;
 
 pub use blame::*;
+pub use diff_parser::*;
 pub use log::*;
 pub use types::*;
 

@@ -587,3 +587,49 @@ fn test_commit_timeline_candidate_highlighting() {
     // Non-candidate commit should have spaces prefix
     assert!(dbg.contains("  2222222 Non-candidate Commit"));
 }
+
+#[test]
+fn test_diff_line_highlighting_rendering() {
+    use git_tardis::git::DiffLineType;
+
+    let backend = TestBackend::new(100, 20);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    let mut app = AppState::new(PathBuf::from("."));
+    app.files = vec!["main.rs".to_string()];
+    app.code_lines = vec![
+        "fn main() {".to_string(),
+        "    println!(\"modified\");".to_string(),
+        "    println!(\"added\");".to_string(),
+        "}".to_string(),
+    ];
+
+    // Explicitly set diff line highlight types for file content lines
+    app.file_diff_highlights.insert(2, DiffLineType::Modified);
+    app.file_diff_highlights.insert(3, DiffLineType::Added);
+
+    terminal.draw(|f| render(f, &mut app)).unwrap();
+    let dbg = format!("{:?}", terminal.backend().buffer());
+
+    // Line 2 modified indicator "~ " and Line 3 added indicator "+ "
+    assert!(dbg.contains("2 ~"));
+    assert!(dbg.contains("3 +"));
+
+    // Check raw unified diff rendering
+    let mut app_diff = AppState::new(PathBuf::from("."));
+    app_diff.code_lines = vec![
+        "diff --git a/main.rs b/main.rs".to_string(),
+        "@@ -1,3 +1,4 @@".to_string(),
+        " fn main() {".to_string(),
+        "+    println!(\"added line\");".to_string(),
+        "-    println!(\"deleted line\");".to_string(),
+    ];
+
+    terminal.draw(|f| render(f, &mut app_diff)).unwrap();
+    let dbg_diff = format!("{:?}", terminal.backend().buffer());
+
+    assert!(dbg_diff.contains("diff --git"));
+    assert!(dbg_diff.contains("@@ -1,3 +1,4 @@"));
+    assert!(dbg_diff.contains("added line"));
+    assert!(dbg_diff.contains("deleted line"));
+}

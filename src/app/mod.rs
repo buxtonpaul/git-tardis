@@ -105,6 +105,7 @@ pub struct AppState {
 
     pub grammar_registry: GrammarRegistry,
     pub current_line_blame: Option<BlameLine>,
+    pub file_diff_highlights: std::collections::HashMap<usize, crate::git::DiffLineType>,
 }
 
 impl AppState {
@@ -146,6 +147,7 @@ impl AppState {
 
             grammar_registry: GrammarRegistry::new(),
             current_line_blame: None,
+            file_diff_highlights: std::collections::HashMap::new(),
         }
     }
 
@@ -556,6 +558,29 @@ impl AppState {
         }
 
         self.update_candidate_commits();
+        self.update_file_diff_highlights();
+    }
+
+    pub fn update_file_diff_highlights(&mut self) {
+        self.file_diff_highlights.clear();
+        let cur_file = match self.current_file_path() {
+            Some(f) => f,
+            None => return,
+        };
+
+        let diff_res = if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+            if let Some(hash) = &self.selected_commit_hash {
+                repo.get_diff_file(hash, &cur_file)
+            } else {
+                repo.get_working_diff(Some(&cur_file))
+            }
+        } else {
+            return;
+        };
+
+        if let Ok(diff_text) = diff_res {
+            self.file_diff_highlights = crate::git::diff_parser::parse_file_diff_hunks(&diff_text);
+        }
     }
 
     pub fn current_file_path(&self) -> Option<String> {

@@ -264,7 +264,23 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         for (idx, line) in state.code_lines.iter().enumerate() {
             let line_num = idx + 1;
             let is_cursor = line_num == state.cursor_line;
-            let prefix = if is_cursor { "> " } else { "  " };
+
+            let line_diff_type = state
+                .file_diff_highlights
+                .get(&line_num)
+                .copied()
+                .unwrap_or_else(|| crate::git::diff_parser::classify_diff_line(line));
+
+            let (diff_prefix, diff_color) = match line_diff_type {
+                crate::git::DiffLineType::Added => ("+ ", Some(Color::Green)),
+                crate::git::DiffLineType::Modified => ("~ ", Some(Color::Yellow)),
+                crate::git::DiffLineType::Deleted => ("- ", Some(Color::Red)),
+                crate::git::DiffLineType::HunkHeader => ("@@", Some(Color::Cyan)),
+                crate::git::DiffLineType::DiffHeader => ("##", Some(Color::Yellow)),
+                crate::git::DiffLineType::Context => ("  ", None),
+            };
+
+            let prefix = if is_cursor { "> " } else { diff_prefix };
 
             let gutter_style = if is_cursor && is_code_active {
                 Style::default()
@@ -273,6 +289,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     .add_modifier(Modifier::BOLD)
             } else if is_cursor {
                 Style::default().fg(Color::Yellow)
+            } else if let Some(col) = diff_color {
+                Style::default().fg(col)
             } else {
                 Style::default().fg(Color::DarkGray)
             };
@@ -291,6 +309,32 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                         span_style = span_style.add_modifier(Modifier::BOLD);
                     } else if is_cursor && span_style.fg.is_none() {
                         span_style = span_style.fg(Color::Yellow);
+                    } else if !is_cursor {
+                        match line_diff_type {
+                            crate::git::DiffLineType::Added => {
+                                if span_style.fg.is_none() {
+                                    span_style = span_style.fg(Color::Green);
+                                }
+                            }
+                            crate::git::DiffLineType::Modified => {
+                                if span_style.fg.is_none() {
+                                    span_style = span_style.fg(Color::Yellow);
+                                }
+                            }
+                            crate::git::DiffLineType::Deleted => {
+                                if span_style.fg.is_none() {
+                                    span_style = span_style.fg(Color::Red);
+                                }
+                            }
+                            crate::git::DiffLineType::HunkHeader => {
+                                span_style = span_style.fg(Color::Cyan);
+                            }
+                            crate::git::DiffLineType::DiffHeader => {
+                                span_style =
+                                    span_style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
+                            }
+                            crate::git::DiffLineType::Context => {}
+                        }
                     }
                     spans.push(Span::styled(hl_span.text.clone(), span_style));
                 }
@@ -303,10 +347,19 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 } else if is_cursor {
                     Style::default().fg(Color::Yellow)
                 } else {
-                    Style::default()
+                    match line_diff_type {
+                        crate::git::DiffLineType::Added => Style::default().fg(Color::Green),
+                        crate::git::DiffLineType::Modified => Style::default().fg(Color::Yellow),
+                        crate::git::DiffLineType::Deleted => Style::default().fg(Color::Red),
+                        crate::git::DiffLineType::HunkHeader => Style::default().fg(Color::Cyan),
+                        crate::git::DiffLineType::DiffHeader => Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                        crate::git::DiffLineType::Context => Style::default(),
+                    }
                 };
                 spans.push(Span::styled(line.clone(), line_style));
-            }
+            };
 
             if is_cursor {
                 if let Some(blame) = &state.current_line_blame {
