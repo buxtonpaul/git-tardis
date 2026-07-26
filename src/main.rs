@@ -8,12 +8,11 @@ use crossterm::{
 use git_tardis::app::{AppState, CommitSummary, ModifiedFileEntry};
 use git_tardis::cli::CliArgs;
 use git_tardis::config::Config;
-use git_tardis::git::GitRepo;
 use git_tardis::ui::{render, KeyDispatcher, KeymapRegistry};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 fn load_repo_data(app: &mut AppState) {
-    if let Ok(repo) = GitRepo::open(&app.repo_path) {
+    if let Some(repo) = app.repo() {
         if let Ok(files) = repo.list_files() {
             app.files = files;
         }
