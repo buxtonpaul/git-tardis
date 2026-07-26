@@ -109,6 +109,8 @@ pub struct AppState {
     pub grammar_registry: GrammarRegistry,
     pub current_line_blame: Option<BlameLine>,
     pub file_diff_highlights: std::collections::HashMap<usize, crate::git::DiffLineType>,
+    pub blame_cache: std::collections::HashMap<(String, Option<String>), Vec<BlameLine>>,
+    pub blame_subprocess_count: usize,
 }
 
 impl AppState {
@@ -151,6 +153,8 @@ impl AppState {
             grammar_registry: GrammarRegistry::new(),
             current_line_blame: None,
             file_diff_highlights: std::collections::HashMap::new(),
+            blame_cache: std::collections::HashMap::new(),
+            blame_subprocess_count: 0,
         }
     }
 
@@ -407,8 +411,13 @@ impl AppState {
 
     pub fn reset_time_travel(&mut self) {
         self.selected_commit_hash = None;
+        self.clear_blame_cache();
         self.load_currently_selected_file();
         self.status_message = "Exited Time-Travel mode (returned to working directory)".to_string();
+    }
+
+    pub fn clear_blame_cache(&mut self) {
+        self.blame_cache.clear();
     }
 
     pub fn load_currently_selected_file(&mut self) {
@@ -795,17 +804,28 @@ impl AppState {
             return;
         }
 
-        if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
-            let commit = self.selected_commit_hash.as_deref();
+        let key = (file_path.clone(), self.selected_commit_hash.clone());
+
+        if !self.blame_cache.contains_key(&key) {
+            if let Ok(repo) = crate::git::GitRepo::open(&self.repo_path) {
+                let commit = self.selected_commit_hash.as_deref();
+                self.blame_subprocess_count += 1;
+                let blame_res = repo.get_blame_at_commit(commit, &file_path, None, None);
+                let blame_lines = blame_res.unwrap_or_default();
+                self.blame_cache.insert(key.clone(), blame_lines);
+            } else {
+                self.blame_cache.insert(key.clone(), Vec::new());
+            }
+        }
+
+        if let Some(blame_lines) = self.blame_cache.get(&key) {
             let effective_line = self.effective_cursor_line();
-            let blame_res = repo.get_blame_at_commit(
-                commit,
-                &file_path,
-                Some(effective_line),
-                Some(effective_line),
-            );
-            if let Ok(blame_lines) = blame_res {
-                self.current_line_blame = blame_lines.into_iter().next();
+            if effective_line > 0 {
+                let found = blame_lines
+                    .get(effective_line - 1)
+                    .filter(|b| b.final_line == effective_line)
+                    .or_else(|| blame_lines.iter().find(|b| b.final_line == effective_line));
+                self.current_line_blame = found.cloned();
             } else {
                 self.current_line_blame = None;
             }
