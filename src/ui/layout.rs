@@ -1,12 +1,13 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Tabs},
+    Frame,
 };
 
 use crate::app::{ActivePanel, AppState, SidebarView};
+use crate::treesitter::{capture_name_to_style, highlight_viewport};
 
 pub fn render(frame: &mut Frame, state: &AppState) {
     let chunks = Layout::default()
@@ -48,10 +49,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     // 2. Middle Main Workspace (32% Sidebar / 68% Code Viewer Split)
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(32),
-            Constraint::Percentage(68),
-        ])
+        .constraints([Constraint::Percentage(32), Constraint::Percentage(68)])
         .split(chunks[1]);
 
     // Left Sidebar rendering
@@ -146,11 +144,25 @@ pub fn render(frame: &mut Frame, state: &AppState) {
             Style::default().fg(Color::DarkGray),
         )));
     } else {
+        let grammar_entry = state.current_file_path().and_then(|path| {
+            let ext = std::path::Path::new(&path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            state.grammar_registry.get_by_extension(ext)
+        });
+
+        let source_code = state.code_lines.join("\n");
+        let highlighted_lines = grammar_entry
+            .as_ref()
+            .map(|entry| highlight_viewport(entry, &source_code, 1, state.code_lines.len()));
+
         for (idx, line) in state.code_lines.iter().enumerate() {
             let line_num = idx + 1;
             let is_cursor = line_num == state.cursor_line;
             let prefix = if is_cursor { "> " } else { "  " };
-            let line_style = if is_cursor && is_code_active {
+
+            let gutter_style = if is_cursor && is_code_active {
                 Style::default()
                     .bg(Color::DarkGray)
                     .fg(Color::Yellow)
@@ -158,11 +170,43 @@ pub fn render(frame: &mut Frame, state: &AppState) {
             } else if is_cursor {
                 Style::default().fg(Color::Yellow)
             } else {
-                Style::default()
+                Style::default().fg(Color::DarkGray)
             };
 
-            let content = format!("{:>3} {}{}", line_num, prefix, line);
-            formatted_code.push(Line::from(Span::styled(content, line_style)));
+            let gutter_text = format!("{:>3} {}", line_num, prefix);
+            let mut spans = vec![Span::styled(gutter_text, gutter_style)];
+
+            if let Some(hl_line) = highlighted_lines.as_ref().and_then(|hl| hl.get(idx)) {
+                for hl_span in &hl_line.spans {
+                    let mut span_style = capture_name_to_style(&hl_span.capture_name);
+                    if is_cursor && is_code_active {
+                        span_style = span_style.bg(Color::DarkGray);
+                        if span_style.fg.is_none() {
+                            span_style = span_style.fg(Color::Yellow);
+                        }
+                        span_style = span_style.add_modifier(Modifier::BOLD);
+                    } else if is_cursor {
+                        if span_style.fg.is_none() {
+                            span_style = span_style.fg(Color::Yellow);
+                        }
+                    }
+                    spans.push(Span::styled(hl_span.text.clone(), span_style));
+                }
+            } else {
+                let line_style = if is_cursor && is_code_active {
+                    Style::default()
+                        .bg(Color::DarkGray)
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else if is_cursor {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                };
+                spans.push(Span::styled(line.clone(), line_style));
+            }
+
+            formatted_code.push(Line::from(spans));
         }
     }
 
@@ -183,7 +227,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{backend::TestBackend, Terminal};
     use std::path::PathBuf;
 
     #[test]
@@ -235,8 +279,7 @@ mod tests {
         app.toggle_panel_focus();
         terminal.draw(|f| render(f, &app)).unwrap();
 
-        let sidebar_border_cell_2 =
-            &terminal.backend().buffer()[(sidebar_rect.0, sidebar_rect.1)];
+        let sidebar_border_cell_2 = &terminal.backend().buffer()[(sidebar_rect.0, sidebar_rect.1)];
         assert_eq!(sidebar_border_cell_2.fg, Color::DarkGray);
 
         let code_border_cell_2 = &terminal.backend().buffer()[(code_rect.0, code_rect.1)];

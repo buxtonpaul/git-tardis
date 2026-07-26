@@ -1,16 +1,16 @@
-use std::io::{IsTerminal, stdout};
+use std::io::{stdout, IsTerminal};
 
 use crossterm::{
-    ExecutableCommand,
     event::{self, Event, KeyEventKind},
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    ExecutableCommand,
 };
 use git_tardis::app::AppState;
 use git_tardis::cli::CliArgs;
 use git_tardis::config::Config;
 use git_tardis::git::GitRepo;
-use git_tardis::ui::{KeyDispatcher, KeymapRegistry, render};
-use ratatui::{Terminal, backend::CrosstermBackend};
+use git_tardis::ui::{render, KeyDispatcher, KeymapRegistry};
+use ratatui::{backend::CrosstermBackend, Terminal};
 
 fn load_repo_data(app: &mut AppState) {
     if let Ok(repo) = GitRepo::open(&app.repo_path) {

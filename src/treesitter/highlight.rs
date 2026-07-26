@@ -1,3 +1,4 @@
+use ratatui::style::{Color, Style};
 use tree_sitter::{Parser, QueryCursor, StreamingIterator};
 
 use super::registry::GrammarEntry;
@@ -161,4 +162,33 @@ pub fn merge_adjacent_spans(spans: Vec<HighlightSpan>) -> Vec<HighlightSpan> {
     }
 
     merged
+}
+
+/// Map Tree-sitter capture names to standard Ratatui ANSI color styles.
+pub fn capture_name_to_style(capture: &str) -> Style {
+    let color = match capture {
+        c if c.starts_with("keyword") || c == "repeat" || c == "conditional" => Color::Magenta,
+        c if c.starts_with("function") || c.starts_with("method") => Color::Blue,
+        c if c.starts_with("type") || c == "structure" || c == "class" => Color::Yellow,
+        c if c.starts_with("string") || c == "char" => Color::Green,
+        c if c.starts_with("comment") => Color::DarkGray,
+        c if c.starts_with("number")
+            || c.starts_with("float")
+            || c.starts_with("boolean")
+            || c.starts_with("constant") =>
+        {
+            Color::Red
+        }
+        c if c.starts_with("variable") || c.starts_with("property") || c == "field" => Color::Cyan,
+        c if c.starts_with("operator") => Color::LightCyan,
+        c if c == "attribute" || c == "macro" => Color::LightYellow,
+        c if c.starts_with("punctuation") => Color::Gray,
+        _ => Color::Reset,
+    };
+
+    if color == Color::Reset {
+        Style::default()
+    } else {
+        Style::default().fg(color)
+    }
 }

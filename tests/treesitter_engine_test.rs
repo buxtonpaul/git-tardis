@@ -3,6 +3,54 @@ use git_tardis::treesitter::{
 };
 
 #[test]
+fn test_capture_name_to_style_mapping() {
+    use git_tardis::treesitter::capture_name_to_style;
+    use ratatui::style::{Color, Style};
+
+    assert_eq!(
+        capture_name_to_style("keyword"),
+        Style::default().fg(Color::Magenta)
+    );
+    assert_eq!(
+        capture_name_to_style("keyword.function"),
+        Style::default().fg(Color::Magenta)
+    );
+    assert_eq!(
+        capture_name_to_style("function"),
+        Style::default().fg(Color::Blue)
+    );
+    assert_eq!(
+        capture_name_to_style("function.method"),
+        Style::default().fg(Color::Blue)
+    );
+    assert_eq!(
+        capture_name_to_style("type"),
+        Style::default().fg(Color::Yellow)
+    );
+    assert_eq!(
+        capture_name_to_style("string"),
+        Style::default().fg(Color::Green)
+    );
+    assert_eq!(
+        capture_name_to_style("comment"),
+        Style::default().fg(Color::DarkGray)
+    );
+    assert_eq!(
+        capture_name_to_style("number"),
+        Style::default().fg(Color::Red)
+    );
+    assert_eq!(
+        capture_name_to_style("variable"),
+        Style::default().fg(Color::Cyan)
+    );
+    assert_eq!(
+        capture_name_to_style("punctuation.bracket"),
+        Style::default().fg(Color::Gray)
+    );
+    assert_eq!(capture_name_to_style("normal"), Style::default());
+}
+
+#[test]
 fn test_grammar_registry_builtins() {
     let registry = GrammarRegistry::new();
 

@@ -1,7 +1,7 @@
 use git_tardis::app::{AppState, NavigationMode};
-use git_tardis::ui::Action;
 use git_tardis::git::GitRepo;
 use git_tardis::timeline::{JumpDirection, JumpScope, TimelineNavigator};
+use git_tardis::ui::Action;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -61,9 +61,24 @@ fn commit_file(repo: &GitRepo, filename: &str, content: &str, message: &str) {
 fn test_file_mode_timeline_navigation() {
     let (_dir, repo) = setup_test_repo();
 
-    commit_file(&repo, "main.rs", "fn main() { println!(\"v1\"); }\n", "C1: v1");
-    commit_file(&repo, "main.rs", "fn main() { println!(\"v2\"); }\n", "C2: v2");
-    commit_file(&repo, "main.rs", "fn main() { println!(\"v3\"); }\n", "C3: v3");
+    commit_file(
+        &repo,
+        "main.rs",
+        "fn main() { println!(\"v1\"); }\n",
+        "C1: v1",
+    );
+    commit_file(
+        &repo,
+        "main.rs",
+        "fn main() { println!(\"v2\"); }\n",
+        "C2: v2",
+    );
+    commit_file(
+        &repo,
+        "main.rs",
+        "fn main() { println!(\"v3\"); }\n",
+        "C3: v3",
+    );
 
     let mut app = AppState::new(repo.work_dir().to_path_buf());
     app.files = vec!["main.rs".to_string()];

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::treesitter::GrammarRegistry;
 use crate::ui::keymap::{Action, Scope};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -84,6 +85,8 @@ pub struct AppState {
 
     pub status_message: String,
     pub running: bool,
+
+    pub grammar_registry: GrammarRegistry,
 }
 
 impl AppState {
@@ -112,6 +115,8 @@ impl AppState {
             status_message: "Press 'Tab' or 'h'/'l' to switch focus. 'm' to change nav mode."
                 .to_string(),
             running: true,
+
+            grammar_registry: GrammarRegistry::new(),
         }
     }
 
@@ -352,25 +357,23 @@ impl AppState {
             Action::CycleNavMode => self.cycle_navigation_mode(),
             Action::MoveUp => self.move_selection_up(),
             Action::MoveDown => self.move_selection_down(),
-            Action::Select => {
-                match self.sidebar_view {
-                    SidebarView::FileExplorer | SidebarView::ModifiedFiles => {
+            Action::Select => match self.sidebar_view {
+                SidebarView::FileExplorer | SidebarView::ModifiedFiles => {
+                    self.load_currently_selected_file();
+                }
+                SidebarView::CommitTimeline => {
+                    if let Some((hash, msg)) = self.commits.get(self.commit_selected).cloned() {
+                        self.selected_commit_hash = Some(hash.clone());
+                        self.update_modified_files_for_selected_commit();
+                        self.sidebar_view = SidebarView::ModifiedFiles;
                         self.load_currently_selected_file();
-                    }
-                    SidebarView::CommitTimeline => {
-                        if let Some((hash, msg)) = self.commits.get(self.commit_selected).cloned() {
-                            self.selected_commit_hash = Some(hash.clone());
-                            self.update_modified_files_for_selected_commit();
-                            self.sidebar_view = SidebarView::ModifiedFiles;
-                            self.load_currently_selected_file();
-                            self.status_message =
-                                format!("Viewing modified files for commit {} ({})", hash, msg);
-                        } else {
-                            self.status_message = "No commit selected".to_string();
-                        }
+                        self.status_message =
+                            format!("Viewing modified files for commit {} ({})", hash, msg);
+                    } else {
+                        self.status_message = "No commit selected".to_string();
                     }
                 }
-            }
+            },
             Action::JumpNextAuto => {
                 let scope = match self.nav_mode {
                     NavigationMode::File => crate::timeline::JumpScope::File,

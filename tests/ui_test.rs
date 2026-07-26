@@ -1,10 +1,8 @@
 use git_tardis::app::{ActivePanel, AppState, NavigationMode, SidebarView};
 use git_tardis::config::Config;
-use git_tardis::ui::{
-    Action, KeyDispatcher, KeyStroke, KeymapRegistry, Scope, render,
-};
+use git_tardis::ui::{render, Action, KeyDispatcher, KeyStroke, KeymapRegistry, Scope};
 use ratatui::style::Color;
-use ratatui::{Terminal, backend::TestBackend};
+use ratatui::{backend::TestBackend, Terminal};
 use std::path::PathBuf;
 
 #[test]
@@ -16,7 +14,11 @@ fn test_split_panel_rendering_and_borders() {
     app.files = vec!["src/main.rs".to_string(), "Cargo.toml".to_string()];
     app.modified_files = vec!["src/main.rs (M)".to_string()];
     app.commits = vec![("a1b2c3d".to_string(), "feat: initial commit".to_string())];
-    app.code_lines = vec!["fn main() {".to_string(), "    println!(\"Hello\");".to_string(), "}".to_string()];
+    app.code_lines = vec![
+        "fn main() {".to_string(),
+        "    println!(\"Hello\");".to_string(),
+        "}".to_string(),
+    ];
 
     // 1. Initial State: Sidebar active
     terminal.draw(|f| render(f, &app)).unwrap();
@@ -215,10 +217,7 @@ fn test_commit_selection_updates_modified_files() {
     let history = repo.get_commit_history(Some(10)).unwrap();
 
     let mut app = AppState::new(repo_path.to_path_buf());
-    app.commits = history
-        .into_iter()
-        .map(|c| (c.hash, c.summary))
-        .collect();
+    app.commits = history.into_iter().map(|c| (c.hash, c.summary)).collect();
 
     // Highlight commit 0 (Second commit file_b)
     app.commit_selected = 0;
@@ -330,7 +329,10 @@ fn test_historical_commit_modified_files_auto_update() {
     let first_commit_hash = history[0].hash.clone();
 
     let mut app = AppState::new(repo_path.to_path_buf());
-    app.commits = vec![(first_commit_hash[..7].to_string(), "First commit".to_string())];
+    app.commits = vec![(
+        first_commit_hash[..7].to_string(),
+        "First commit".to_string(),
+    )];
 
     // Select the commit from timeline (Action::Select on CommitTimeline)
     app.set_sidebar_view(SidebarView::CommitTimeline);
@@ -346,4 +348,57 @@ fn test_historical_commit_modified_files_auto_update() {
     app.move_selection_down();
     assert_eq!(app.modified_selected, 1);
     assert_eq!(app.code_lines, vec!["V1 File 2"]);
+}
+
+#[test]
+fn test_code_viewer_syntax_highlighting_rendering() {
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    let mut app = AppState::new(PathBuf::from("."));
+    app.files = vec!["src/main.rs".to_string()];
+    app.file_selected = 0;
+    app.code_lines = vec![
+        "fn main() {".to_string(),
+        "    let msg = \"hello world\";".to_string(),
+        "}".to_string(),
+    ];
+
+    terminal.draw(|f| render(f, &app)).unwrap();
+    let buffer = terminal.backend().buffer();
+
+    // Code viewer panel starts at x=32, y=3
+    // Inner text starts at x=33, y=4
+    // Line 1: "  1 > fn main() {"
+    let mut line1_str = String::new();
+    for x in 33..50 {
+        line1_str.push_str(buffer[(x, 4)].symbol());
+    }
+    assert!(line1_str.contains("fn main()"));
+
+    // Find x offset where "fn" is located
+    let fn_pos = line1_str.find("fn").unwrap();
+    let fn_x = 33 + fn_pos as u16;
+    let f_cell = &buffer[(fn_x, 4)];
+    let n_cell = &buffer[(fn_x + 1, 4)];
+    assert_eq!(f_cell.fg, Color::Magenta);
+    assert_eq!(n_cell.fg, Color::Magenta);
+
+    // Find x offset where "main" is located
+    let main_pos = line1_str.find("main").unwrap();
+    let main_x = 33 + main_pos as u16;
+    let m_cell = &buffer[(main_x, 4)];
+    assert_eq!(m_cell.fg, Color::Blue);
+
+    // Line 2: "  2       let msg = \"hello world\";"
+    let mut line2_str = String::new();
+    for x in 33..75 {
+        line2_str.push_str(buffer[(x, 5)].symbol());
+    }
+    assert!(line2_str.contains("let msg = \"hello world\";"));
+
+    let string_pos = line2_str.find("\"hello world\"").unwrap();
+    let string_x = 33 + string_pos as u16;
+    let quote_cell = &buffer[(string_x, 5)];
+    assert_eq!(quote_cell.fg, Color::Green);
 }

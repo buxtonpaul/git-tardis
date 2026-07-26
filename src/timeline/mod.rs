@@ -123,10 +123,7 @@ impl TimelineNavigator {
             (None, _) => match direction {
                 JumpDirection::Previous => Some(&commits[0]),
                 JumpDirection::Next => {
-                    return Err(format!(
-                        "Already at latest working state for {}",
-                        file_path
-                    ));
+                    return Err(format!("Already at latest working state for {}", file_path));
                 }
             },
             (Some(_), Some(idx)) => match direction {

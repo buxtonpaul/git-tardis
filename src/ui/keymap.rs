@@ -32,7 +32,8 @@ impl KeyStroke {
                         Some(KeyStroke::Esc)
                     } else if tag.eq_ignore_ascii_case("<tab>") {
                         Some(KeyStroke::Tab)
-                    } else if tag.eq_ignore_ascii_case("<cr>") || tag.eq_ignore_ascii_case("<enter>")
+                    } else if tag.eq_ignore_ascii_case("<cr>")
+                        || tag.eq_ignore_ascii_case("<enter>")
                     {
                         Some(KeyStroke::Enter)
                     } else if tag.eq_ignore_ascii_case("<up>") {
@@ -443,7 +444,10 @@ mod tests {
     #[test]
     fn test_key_stroke_parsing() {
         assert_eq!(KeyStroke::parse("j"), vec![KeyStroke::Char('j')]);
-        assert_eq!(KeyStroke::parse("]f"), vec![KeyStroke::Char(']'), KeyStroke::Char('f')]);
+        assert_eq!(
+            KeyStroke::parse("]f"),
+            vec![KeyStroke::Char(']'), KeyStroke::Char('f')]
+        );
         assert_eq!(KeyStroke::parse("<Esc>"), vec![KeyStroke::Esc]);
         assert_eq!(KeyStroke::parse("<Tab>"), vec![KeyStroke::Tab]);
         assert_eq!(KeyStroke::parse("<CR>"), vec![KeyStroke::Enter]);
@@ -492,8 +496,7 @@ mod tests {
     #[test]
     fn test_dispatcher_ambiguous_timeout() {
         let registry = KeymapRegistry::new();
-        let mut dispatcher =
-            KeyDispatcher::new(registry).with_timeout(Duration::from_millis(10));
+        let mut dispatcher = KeyDispatcher::new(registry).with_timeout(Duration::from_millis(10));
 
         // Send ']'
         let act1 = dispatcher.handle_key(KeyStroke::Char(']'), Scope::CodeViewer);
