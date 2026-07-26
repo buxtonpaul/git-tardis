@@ -80,29 +80,45 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     match state.sidebar_view {
         SidebarView::FileExplorer => {
-            let sel_index = if state.files.is_empty() {
+            let visible_items = state.visible_file_items();
+            let sel_index = if visible_items.is_empty() {
                 0
             } else {
-                state.file_selected.min(state.files.len() - 1)
+                state.file_selected.min(visible_items.len() - 1)
             };
-            let items: Vec<ListItem> = state
-                .files
+            let items: Vec<ListItem> = visible_items
                 .iter()
                 .enumerate()
-                .map(|(i, f)| {
+                .map(|(i, item)| {
+                    let indent = "  ".repeat(item.depth);
+                    let prefix = if item.is_dir {
+                        if item.is_expanded {
+                            "▼ "
+                        } else {
+                            "▶ "
+                        }
+                    } else {
+                        "  "
+                    };
+                    let display_text = format!("{}{}{}", indent, prefix, item.name);
+
                     let style = if i == sel_index && is_sidebar_active {
                         Style::default().bg(Color::Blue).fg(Color::White)
                     } else if i == sel_index {
                         Style::default().fg(Color::Yellow)
+                    } else if item.is_dir {
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
                     };
-                    ListItem::new(f.as_str()).style(style)
+                    ListItem::new(display_text).style(style)
                 })
                 .collect();
             let list = List::new(items).block(sidebar_block);
             let mut list_state = ListState::default();
-            if !state.files.is_empty() {
+            if !visible_items.is_empty() {
                 list_state.select(Some(sel_index));
             }
             frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
@@ -426,6 +442,7 @@ mod tests {
 
         let mut app = AppState::new(PathBuf::from("."));
         app.files = vec!["src/main.rs".into(), "Cargo.toml".into()];
+        app.expand_all_folders();
         app.code_lines = vec!["fn main() {}".into()];
 
         terminal.draw(|f| render(f, &mut app)).unwrap();
@@ -440,7 +457,8 @@ mod tests {
         assert!(content.contains("3: Commit Timeline"));
         assert!(content.contains("Sidebar [1: Explorer]"));
         assert!(content.contains("Code Viewer - Mode: [COMMIT Mode]"));
-        assert!(content.contains("src/main.rs"));
+        assert!(content.contains("src/"));
+        assert!(content.contains("main.rs"));
         assert!(content.contains("fn main() {}"));
     }
 

@@ -86,6 +86,7 @@ fn load_repo_into_app(app: &mut AppState) {
     if let Some(repo) = app.repo() {
         if let Ok(files) = repo.list_files() {
             app.files = files;
+            app.expand_all_folders();
         }
         if let Ok(statuses) = repo.get_status() {
             let items: Vec<ModifiedFileEntry> =
@@ -157,11 +158,16 @@ fn test_sidebar_views_and_commit_queries_comparison() {
 
     // 1. File Explorer View Comparison
     app.set_sidebar_view(SidebarView::FileExplorer);
-    app.file_selected = 0;
+    let visible_items = app.visible_file_items();
+    let first_file_idx = visible_items
+        .iter()
+        .position(|it| !it.is_dir)
+        .expect("No file in visible items");
+    app.file_selected = first_file_idx;
     app.load_currently_selected_file();
     assert_eq!(
         app.active_file.as_deref(),
-        Some(app.files[0].as_str()),
+        Some(visible_items[first_file_idx].path.as_str()),
         "Active file does not match selected file in explorer"
     );
 
@@ -235,13 +241,13 @@ fn test_time_travel_jumps_and_blame_state_comparison() {
     load_repo_into_app(&mut app);
 
     app.set_sidebar_view(SidebarView::FileExplorer);
-    // Find index for src/lib.rs
-    let lib_idx = app
-        .files
+    // Find index for src/main.rs in visible file tree items
+    let main_idx = app
+        .visible_file_items()
         .iter()
-        .position(|f| f == "src/lib.rs")
-        .expect("src/lib.rs not found");
-    app.file_selected = lib_idx;
+        .position(|f| f.path == "src/main.rs")
+        .expect("src/main.rs not found");
+    app.file_selected = main_idx;
     app.load_currently_selected_file();
     app.active_panel = ActivePanel::CodeViewer;
 
@@ -254,7 +260,7 @@ fn test_time_travel_jumps_and_blame_state_comparison() {
         .clone()
         .expect("Time travel jump failed to set commit hash");
     let baseline_file_content = baseline_repo
-        .get_file_at_commit(&jump_hash, "src/lib.rs")
+        .get_file_at_commit(&jump_hash, "src/main.rs")
         .unwrap();
     let expected_lines: Vec<String> = baseline_file_content
         .lines()
@@ -273,7 +279,7 @@ fn test_time_travel_jumps_and_blame_state_comparison() {
         .as_ref()
         .expect("Missing current line blame");
     let baseline_blame_vec = baseline_repo
-        .get_blame_at_commit(Some(&jump_hash), "src/lib.rs", Some(1), Some(1))
+        .get_blame_at_commit(Some(&jump_hash), "src/main.rs", Some(1), Some(1))
         .unwrap();
     let baseline_blame = baseline_blame_vec
         .first()

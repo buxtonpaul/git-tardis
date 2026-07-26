@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+pub mod file_tree;
+pub use file_tree::*;
+
 mod types;
 pub use types::*;
 
@@ -82,6 +85,7 @@ pub struct AppState {
 
     pub files: Vec<String>,
     pub file_selected: usize,
+    pub expanded_folders: std::collections::HashSet<String>,
 
     pub dirty_files: Vec<ModifiedFileEntry>,
     pub dirty_selected: usize,
@@ -127,6 +131,7 @@ impl AppState {
 
             files: Vec::new(),
             file_selected: 0,
+            expanded_folders: std::collections::HashSet::new(),
 
             dirty_files: Vec::new(),
             dirty_selected: 0,
@@ -158,6 +163,53 @@ impl AppState {
             file_diff_highlights: std::collections::HashMap::new(),
             blame_cache: std::collections::HashMap::new(),
             blame_subprocess_count: 0,
+        }
+    }
+
+    pub fn visible_file_items(&self) -> Vec<VisibleFileItem> {
+        let tree = build_file_tree(&self.files);
+        flatten_file_tree(&tree, &self.expanded_folders)
+    }
+
+    pub fn expand_all_folders(&mut self) {
+        let tree = build_file_tree(&self.files);
+        collect_all_dir_paths(&tree, &mut self.expanded_folders);
+    }
+
+    pub fn expand_folder(&mut self, path: &str) {
+        self.expanded_folders.insert(path.to_string());
+    }
+
+    pub fn collapse_folder(&mut self, path: &str) {
+        self.expanded_folders.remove(path);
+    }
+
+    pub fn toggle_folder(&mut self, path: &str) {
+        if self.expanded_folders.contains(path) {
+            self.expanded_folders.remove(path);
+        } else {
+            self.expanded_folders.insert(path.to_string());
+        }
+    }
+
+    pub fn move_to_parent_folder(&mut self) {
+        let items = self.visible_file_items();
+        if items.is_empty() || self.file_selected >= items.len() {
+            return;
+        }
+
+        let current_item = &items[self.file_selected];
+        let parent_path = if let Some(slash_idx) = current_item.path.rfind('/') {
+            &current_item.path[..slash_idx]
+        } else {
+            ""
+        };
+
+        if !parent_path.is_empty() {
+            if let Some(parent_idx) = items.iter().position(|it| it.path == parent_path && it.is_dir) {
+                self.file_selected = parent_idx;
+                self.load_currently_selected_file();
+            }
         }
     }
 
@@ -213,7 +265,8 @@ impl AppState {
         match self.active_panel {
             ActivePanel::Sidebar => match self.sidebar_view {
                 SidebarView::FileExplorer => {
-                    if !self.files.is_empty() && self.file_selected + 1 < self.files.len() {
+                    let items = self.visible_file_items();
+                    if !items.is_empty() && self.file_selected + 1 < items.len() {
                         self.file_selected += 1;
                         self.load_currently_selected_file();
                     }
@@ -432,16 +485,16 @@ impl AppState {
             // Update file explorer list for this target commit
             if let Ok(tree_files) = repo.list_files_at_commit(&hash) {
                 self.files = tree_files;
+                self.expand_all_folders();
                 if let Some(cur_file) = self.current_file_path() {
-                    if let Some(f_idx) = self.files.iter().position(|f| f == &cur_file) {
+                    let items = self.visible_file_items();
+                    if let Some(f_idx) = items.iter().position(|it| it.path == cur_file) {
                         self.file_selected = f_idx;
-                    } else if !self.files.is_empty() {
-                        self.file_selected = self.file_selected.min(self.files.len() - 1);
+                    } else if !items.is_empty() {
+                        self.file_selected = self.file_selected.min(items.len() - 1);
                     } else {
                         self.file_selected = 0;
                     }
-                } else if !self.files.is_empty() {
-                    self.file_selected = self.file_selected.min(self.files.len() - 1);
                 } else {
                     self.file_selected = 0;
                 }
@@ -457,16 +510,16 @@ impl AppState {
         if let Some(repo) = self.repo() {
             if let Ok(wd_files) = repo.list_files() {
                 self.files = wd_files;
+                self.expand_all_folders();
                 if let Some(cur_file) = self.current_file_path() {
-                    if let Some(f_idx) = self.files.iter().position(|f| f == &cur_file) {
+                    let items = self.visible_file_items();
+                    if let Some(f_idx) = items.iter().position(|it| it.path == cur_file) {
                         self.file_selected = f_idx;
-                    } else if !self.files.is_empty() {
-                        self.file_selected = self.file_selected.min(self.files.len() - 1);
+                    } else if !items.is_empty() {
+                        self.file_selected = self.file_selected.min(items.len() - 1);
                     } else {
                         self.file_selected = 0;
                     }
-                } else if !self.files.is_empty() {
-                    self.file_selected = self.file_selected.min(self.files.len() - 1);
                 } else {
                     self.file_selected = 0;
                 }
@@ -485,8 +538,16 @@ impl AppState {
         self.ensure_repo();
         match self.sidebar_view {
             SidebarView::FileExplorer => {
-                if let Some(f) = self.files.get(self.file_selected).cloned() {
-                    self.active_file = Some(f);
+                let items = self.visible_file_items();
+                if !items.is_empty() {
+                    self.file_selected = self.file_selected.min(items.len() - 1);
+                    let item = &items[self.file_selected];
+                    if !item.is_dir {
+                        self.active_file = Some(item.path.clone());
+                    } else {
+                        self.status_message = format!("Selected directory: {}", item.name);
+                        return;
+                    }
                 }
             }
             SidebarView::ModifiedFiles => {
@@ -595,7 +656,18 @@ impl AppState {
             return Some(f.clone());
         }
         match self.sidebar_view {
-            SidebarView::FileExplorer => self.files.get(self.file_selected).cloned(),
+            SidebarView::FileExplorer => {
+                let items = self.visible_file_items();
+                if let Some(item) = items.get(self.file_selected) {
+                    if !item.is_dir {
+                        Some(item.path.clone())
+                    } else {
+                        self.files.first().cloned()
+                    }
+                } else {
+                    self.files.first().cloned()
+                }
+            }
             SidebarView::ModifiedFiles => {
                 if self.selected_commit_hash.is_some() {
                     self.modified_files
@@ -938,7 +1010,17 @@ impl AppState {
             Action::CursorTop => self.cursor_top(),
             Action::CursorBottom => self.cursor_bottom(),
             Action::Select => match self.sidebar_view {
-                SidebarView::FileExplorer | SidebarView::ModifiedFiles => {
+                SidebarView::FileExplorer => {
+                    let items = self.visible_file_items();
+                    if let Some(item) = items.get(self.file_selected).cloned() {
+                        if item.is_dir {
+                            self.toggle_folder(&item.path);
+                        } else {
+                            self.load_currently_selected_file();
+                        }
+                    }
+                }
+                SidebarView::ModifiedFiles => {
                     self.load_currently_selected_file();
                 }
                 SidebarView::CommitTimeline => {
@@ -1043,6 +1125,47 @@ impl AppState {
             }
             Action::EditHere => {
                 self.status_message = "Triggered Edit Here".to_string();
+            }
+            Action::ExpandFolder => {
+                if self.sidebar_view == SidebarView::FileExplorer {
+                    let items = self.visible_file_items();
+                    if let Some(item) = items.get(self.file_selected).cloned() {
+                        if item.is_dir {
+                            if !item.is_expanded {
+                                self.expand_folder(&item.path);
+                            } else if self.file_selected + 1 < items.len() {
+                                self.file_selected += 1;
+                                self.load_currently_selected_file();
+                            }
+                        } else {
+                            self.load_currently_selected_file();
+                        }
+                    }
+                }
+            }
+            Action::CollapseFolder => {
+                if self.sidebar_view == SidebarView::FileExplorer {
+                    let items = self.visible_file_items();
+                    if let Some(item) = items.get(self.file_selected).cloned() {
+                        if item.is_dir && item.is_expanded {
+                            self.collapse_folder(&item.path);
+                        } else {
+                            self.move_to_parent_folder();
+                        }
+                    }
+                }
+            }
+            Action::ToggleFolder => {
+                if self.sidebar_view == SidebarView::FileExplorer {
+                    let items = self.visible_file_items();
+                    if let Some(item) = items.get(self.file_selected).cloned() {
+                        if item.is_dir {
+                            self.toggle_folder(&item.path);
+                        } else {
+                            self.load_currently_selected_file();
+                        }
+                    }
+                }
             }
         }
     }

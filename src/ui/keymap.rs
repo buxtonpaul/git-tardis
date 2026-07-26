@@ -145,6 +145,11 @@ pub enum Action {
 
     InlineRewrite,
     EditHere,
+
+    // Tree-based File Explorer actions
+    ExpandFolder,
+    CollapseFolder,
+    ToggleFolder,
 }
 
 /// Active panel focus scope
@@ -209,6 +214,10 @@ impl KeymapRegistry {
         self.bind(Scope::Sidebar, "l", Action::Select);
         self.bind(Scope::Sidebar, "]", Action::JumpNextAuto);
         self.bind(Scope::Sidebar, "[", Action::JumpPrevAuto);
+        self.bind(Scope::Sidebar, "<Right>", Action::ExpandFolder);
+        self.bind(Scope::Sidebar, "<Left>", Action::CollapseFolder);
+        self.bind(Scope::Sidebar, "h", Action::CollapseFolder);
+        self.bind(Scope::Sidebar, " ", Action::ToggleFolder);
 
         // Code Viewer scope
         self.bind(Scope::CodeViewer, "j", Action::MoveDown);
