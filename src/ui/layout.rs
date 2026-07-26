@@ -9,7 +9,7 @@ use ratatui::{
 use crate::app::{ActivePanel, AppState, SidebarView};
 use crate::treesitter::{capture_name_to_style, highlight_viewport};
 
-pub fn render(frame: &mut Frame, state: &AppState) {
+pub fn render(frame: &mut Frame, state: &mut AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -287,18 +287,9 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     }
 
     let viewport_height = main_chunks[1].height.saturating_sub(2) as usize;
-    let scroll_offset = if state.code_lines.is_empty() || viewport_height == 0 {
-        0
-    } else {
-        let cursor_idx = state.cursor_line.saturating_sub(1);
-        if cursor_idx < state.code_scroll_offset {
-            cursor_idx
-        } else if cursor_idx >= state.code_scroll_offset + viewport_height {
-            cursor_idx + 1 - viewport_height
-        } else {
-            state.code_scroll_offset
-        }
-    };
+    state.sidebar_viewport_height = main_chunks[0].height.saturating_sub(2) as usize;
+    state.ensure_cursor_visible(viewport_height);
+    let scroll_offset = state.code_scroll_offset;
 
     let paragraph = Paragraph::new(formatted_code)
         .block(code_block)
@@ -331,7 +322,7 @@ mod tests {
         app.files = vec!["src/main.rs".into(), "Cargo.toml".into()];
         app.code_lines = vec!["fn main() {}".into()];
 
-        terminal.draw(|f| render(f, &app)).unwrap();
+        terminal.draw(|f| render(f, &mut app)).unwrap();
 
         let buffer = terminal.backend().buffer();
         let content = format!("{:?}", buffer);
@@ -356,7 +347,7 @@ mod tests {
         app.files = vec!["src/main.rs".into()];
 
         // Render with Sidebar active
-        terminal.draw(|f| render(f, &app)).unwrap();
+        terminal.draw(|f| render(f, &mut app)).unwrap();
         let sidebar_rect = main_chunks_0_rect(); // top left panel
         let code_rect = main_chunks_1_rect();
 
@@ -369,7 +360,7 @@ mod tests {
 
         // Switch focus to CodeViewer
         app.toggle_panel_focus();
-        terminal.draw(|f| render(f, &app)).unwrap();
+        terminal.draw(|f| render(f, &mut app)).unwrap();
 
         let sidebar_border_cell_2 = &terminal.backend().buffer()[(sidebar_rect.0, sidebar_rect.1)];
         assert_eq!(sidebar_border_cell_2.fg, Color::DarkGray);

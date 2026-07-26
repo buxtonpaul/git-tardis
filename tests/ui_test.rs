@@ -21,7 +21,7 @@ fn test_split_panel_rendering_and_borders() {
     ];
 
     // 1. Initial State: Sidebar active
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let buffer = terminal.backend().buffer().clone();
     let dbg_str = format!("{:?}", buffer);
 
@@ -39,7 +39,7 @@ fn test_split_panel_rendering_and_borders() {
 
     // 2. Toggle focus to CodeViewer
     app.toggle_panel_focus();
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let buffer2 = terminal.backend().buffer().clone();
 
     // Now Sidebar is DarkGray, CodeViewer is Cyan
@@ -59,26 +59,26 @@ fn test_sidebar_tab_views_rendering() {
 
     // Tab 1: Explorer
     app.set_sidebar_view(SidebarView::FileExplorer);
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg1 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg1.contains("file1.rs"));
 
     // Tab 2: Modified Files
     app.set_sidebar_view(SidebarView::ModifiedFiles);
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg2 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg2.contains("mod1.rs (M)"));
 
     // Tab 3: Commit Timeline
     app.set_sidebar_view(SidebarView::CommitTimeline);
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg3 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg3.contains("1234567 commit message"));
 
     // Tab 4: Target Candidates
     app.set_sidebar_view(SidebarView::TargetCandidates);
     app.candidate_commits = vec![("7654321".to_string(), "candidate commit".to_string())];
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg4 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg4.contains("7654321 candidate commit"));
 }
@@ -357,7 +357,7 @@ fn test_code_viewer_syntax_highlighting_rendering() {
         "}".to_string(),
     ];
 
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let buffer = terminal.backend().buffer();
 
     // Code viewer panel starts at x=32, y=3
@@ -441,7 +441,7 @@ fn test_current_line_git_blame_rendering_and_navigation() {
     let backend = TestBackend::new(140, 30);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg1 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg1.contains("Alice Tester"));
     assert!(dbg1.contains("add line_one function"));
@@ -456,7 +456,7 @@ fn test_current_line_git_blame_rendering_and_navigation() {
     let blame4 = app.current_line_blame.as_ref().unwrap();
     assert_eq!(blame4.summary, "add line_two function");
 
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg4 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg4.contains("add line_two function"));
 }
@@ -475,7 +475,7 @@ fn test_code_viewer_viewport_scrolling_on_cursor_navigation() {
     // 1. Initial State: cursor on line 1
     // Total height = 15. Header (3), Footer (3), Main workspace height = 9.
     // Code Viewer inner content height = 9 - 2 (borders) = 7 lines.
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg1 = format!("{:?}", terminal.backend().buffer());
 
     // Line 1 should be visible
@@ -490,12 +490,12 @@ fn test_code_viewer_viewport_scrolling_on_cursor_navigation() {
     }
     assert_eq!(app.cursor_line, 11);
 
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg2 = format!("{:?}", terminal.backend().buffer());
 
-    // Line 11 should now be visible at the cursor
+    // Line 11 should now be visible at the cursor, keeping scrolloff context
     assert!(dbg2.contains("11 > line 11"));
-    assert!(dbg2.contains(" 5   line 5"));
+    assert!(dbg2.contains(" 8   line 8"));
     // Line 1 should have scrolled off the top
     assert!(!dbg2.contains("  1   line 1"));
 
@@ -505,11 +505,46 @@ fn test_code_viewer_viewport_scrolling_on_cursor_navigation() {
     }
     assert_eq!(app.cursor_line, 3);
 
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg3 = format!("{:?}", terminal.backend().buffer());
 
     // Line 3 should now be visible at the top of the scrolled viewport
     assert!(dbg3.contains("3 > line 3"));
+}
+
+#[test]
+fn test_vim_scrolling_and_positioning_actions() {
+    let mut app = AppState::new(PathBuf::from("."));
+    app.code_lines = (1..=100).map(|i| format!("line {}", i)).collect();
+    app.active_panel = ActivePanel::CodeViewer;
+    app.code_viewport_height = 20;
+    app.scrolloff = 3;
+    app.cursor_line = 1;
+
+    // 1. Half page down (<C-d>)
+    app.dispatch_action(Action::HalfPageDown);
+    assert_eq!(app.cursor_line, 11);
+
+    // 2. Full page down (<C-f>)
+    app.dispatch_action(Action::PageDown);
+    assert_eq!(app.cursor_line, 29);
+
+    // 3. Half page up (<C-u>)
+    app.dispatch_action(Action::HalfPageUp);
+    assert_eq!(app.cursor_line, 19);
+
+    // 4. Center cursor (zz)
+    app.cursor_line = 50;
+    app.dispatch_action(Action::CenterCursor);
+    assert_eq!(app.code_scroll_offset, 39); // (50-1) - 10 = 39
+
+    // 5. Cursor top (zt)
+    app.dispatch_action(Action::CursorTop);
+    assert_eq!(app.code_scroll_offset, 49); // (50-1) = 49
+
+    // 6. Cursor bottom (zb)
+    app.dispatch_action(Action::CursorBottom);
+    assert_eq!(app.code_scroll_offset, 30); // (50-1) - 19 = 30
 }
 
 #[test]
@@ -525,7 +560,7 @@ fn test_commit_timeline_candidate_highlighting() {
     app.candidate_commits = vec![("1111111".to_string(), "Candidate Commit".to_string())];
     app.sidebar_view = SidebarView::CommitTimeline;
 
-    terminal.draw(|f| render(f, &app)).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg = format!("{:?}", terminal.backend().buffer());
 
     // Candidate commit should have '*' indicator prefix

@@ -14,6 +14,8 @@ pub enum KeyStroke {
     Down,
     Left,
     Right,
+    PageUp,
+    PageDown,
     Ctrl(char),
 }
 
@@ -44,6 +46,10 @@ impl KeyStroke {
                         Some(KeyStroke::Left)
                     } else if tag.eq_ignore_ascii_case("<right>") {
                         Some(KeyStroke::Right)
+                    } else if tag.eq_ignore_ascii_case("<pageup>") {
+                        Some(KeyStroke::PageUp)
+                    } else if tag.eq_ignore_ascii_case("<pagedown>") {
+                        Some(KeyStroke::PageDown)
                     } else if tag.to_ascii_lowercase().starts_with("<c-") && tag.len() == 5 {
                         tag.chars()
                             .nth(3)
@@ -91,6 +97,8 @@ impl TryFrom<crossterm::event::KeyEvent> for KeyStroke {
             KeyCode::Down => Ok(KeyStroke::Down),
             KeyCode::Left => Ok(KeyStroke::Left),
             KeyCode::Right => Ok(KeyStroke::Right),
+            KeyCode::PageUp => Ok(KeyStroke::PageUp),
+            KeyCode::PageDown => Ok(KeyStroke::PageDown),
             _ => Err(()),
         }
     }
@@ -111,6 +119,17 @@ pub enum Action {
     MoveUp,
     MoveDown,
     Select,
+
+    // Scrolling and page navigation actions
+    HalfPageDown,
+    HalfPageUp,
+    PageDown,
+    PageUp,
+    ScrollLineDown,
+    ScrollLineUp,
+    CenterCursor,
+    CursorTop,
+    CursorBottom,
 
     // Timeline navigation actions
     JumpNextAuto,     // Default active mode jump
@@ -173,6 +192,14 @@ impl KeymapRegistry {
         self.bind(Scope::Global, "4", Action::SetSidebarView(4));
         self.bind(Scope::Global, "m", Action::CycleNavMode);
 
+        // Page navigation shortcuts
+        self.bind(Scope::Global, "<C-d>", Action::HalfPageDown);
+        self.bind(Scope::Global, "<C-u>", Action::HalfPageUp);
+        self.bind(Scope::Global, "<C-f>", Action::PageDown);
+        self.bind(Scope::Global, "<C-b>", Action::PageUp);
+        self.bind(Scope::Global, "<PageDown>", Action::PageDown);
+        self.bind(Scope::Global, "<PageUp>", Action::PageUp);
+
         // Sidebar scope
         self.bind(Scope::Sidebar, "j", Action::MoveDown);
         self.bind(Scope::Sidebar, "k", Action::MoveUp);
@@ -190,6 +217,13 @@ impl KeymapRegistry {
         // Timeline navigation shortcuts
         self.bind(Scope::CodeViewer, "]", Action::JumpNextAuto);
         self.bind(Scope::CodeViewer, "[", Action::JumpPrevAuto);
+
+        // Line and viewport repositioning shortcuts
+        self.bind(Scope::CodeViewer, "<C-e>", Action::ScrollLineDown);
+        self.bind(Scope::CodeViewer, "<C-y>", Action::ScrollLineUp);
+        self.bind(Scope::CodeViewer, "zz", Action::CenterCursor);
+        self.bind(Scope::CodeViewer, "zt", Action::CursorTop);
+        self.bind(Scope::CodeViewer, "zb", Action::CursorBottom);
 
         self.bind(Scope::CodeViewer, "e", Action::InlineRewrite);
         self.bind(Scope::CodeViewer, "E", Action::EditHere);
@@ -282,6 +316,20 @@ impl KeymapRegistry {
         bind_list(self, scope, &mappings.move_up, Action::MoveUp);
         bind_list(self, scope, &mappings.move_down, Action::MoveDown);
         bind_list(self, scope, &mappings.select, Action::Select);
+        bind_list(self, scope, &mappings.half_page_down, Action::HalfPageDown);
+        bind_list(self, scope, &mappings.half_page_up, Action::HalfPageUp);
+        bind_list(self, scope, &mappings.page_down, Action::PageDown);
+        bind_list(self, scope, &mappings.page_up, Action::PageUp);
+        bind_list(
+            self,
+            scope,
+            &mappings.scroll_line_down,
+            Action::ScrollLineDown,
+        );
+        bind_list(self, scope, &mappings.scroll_line_up, Action::ScrollLineUp);
+        bind_list(self, scope, &mappings.center_cursor, Action::CenterCursor);
+        bind_list(self, scope, &mappings.cursor_top, Action::CursorTop);
+        bind_list(self, scope, &mappings.cursor_bottom, Action::CursorBottom);
         bind_list(self, scope, &mappings.jump_next, Action::JumpNextAuto);
         bind_list(self, scope, &mappings.jump_prev, Action::JumpPrevAuto);
         bind_list(

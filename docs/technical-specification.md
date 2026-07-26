@@ -243,12 +243,14 @@ pub struct AppState {
 | **Global** | `<Tab>`, `h`, `l`, `<Left>`, `<Right>` | `ToggleFocus` | Swap panel focus (`Sidebar` $\leftrightarrow$ `CodeViewer`) |
 | **Global** | `1`, `2`, `3`, `4` | `SetSidebarView` | Switch `SidebarView` tab (`Explorer`, `Modified`, `Timeline`, `Candidates`) |
 | **Global** | `m` | `CycleNavMode` | Cycle `NavigationMode` (`Commit` $\rightarrow$ `File` $\rightarrow$ `Function` $\rightarrow$ `Line` $\rightarrow$ `Commit`) |
+| **Global** | `<C-d>` / `<C-u>` | `HalfPageDown` / `HalfPageUp` | Scroll active panel half-page down / up |
+| **Global** | `<C-f>` / `<C-b>` / `<PageDown>` / `<PageUp>` | `PageDown` / `PageUp` | Scroll active panel full-page down / up |
 | **Sidebar Scope** | `j`, `k`, `<Up>`, `<Down>` | `MoveUp` / `MoveDown` | Navigate selected list item in active sidebar view (updates file viewer immediately in timeline/candidates view) |
 | **Sidebar Scope** | `<CR>` | `Select` | Open selected file or inspect commit |
 | **Code Viewer Scope** | `j`, `k`, `<Up>`, `<Down>` | `MoveUp` / `MoveDown` | Move code cursor line up/down |
 | **Code Viewer Scope** | `]`, `[` | `JumpNextAuto` / `JumpPrevAuto` | Execute timeline jump (`next`/`previous` commit) based on active `nav_mode` |
-| **Code Viewer Scope** | `]f`, `[f` | `JumpNextFunction` / `JumpPrevFunction` | Force jump to `next`/`previous` commit modifying enclosing **Function** |
-| **Code Viewer Scope** | `]l`, `[l` | `JumpNextLine` / `JumpPrevLine` | Force jump to `next`/`previous` commit modifying cursor **Line** (blame) |
+| **Code Viewer Scope** | `<C-e>` / `<C-y>` | `ScrollLineDown` / `ScrollLineUp` | Scroll viewport down / up 1 line |
+| **Code Viewer Scope** | `zz` / `zt` / `zb` | `CenterCursor` / `CursorTop` / `CursorBottom` | Center / top / bottom viewport repositioning |
 | **Code Viewer Scope** | `e` | `InlineRewrite` | Trigger "Inline rewrite" on target commit |
 | **Code Viewer Scope** | `E` | `EditHere` | Trigger "Edit here" on target commit |
 

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Clone, Default, PartialEq, Eq)]
 pub struct Config {
+    pub scrolloff: Option<usize>,
     pub languages: Option<Vec<LanguageConfig>>,
     pub keymaps: Option<KeymapConfig>,
 }
@@ -32,6 +33,15 @@ pub struct ScopeKeymapConfig {
     pub move_up: Option<KeyBindingConfig>,
     pub move_down: Option<KeyBindingConfig>,
     pub select: Option<KeyBindingConfig>,
+    pub half_page_down: Option<KeyBindingConfig>,
+    pub half_page_up: Option<KeyBindingConfig>,
+    pub page_down: Option<KeyBindingConfig>,
+    pub page_up: Option<KeyBindingConfig>,
+    pub scroll_line_down: Option<KeyBindingConfig>,
+    pub scroll_line_up: Option<KeyBindingConfig>,
+    pub center_cursor: Option<KeyBindingConfig>,
+    pub cursor_top: Option<KeyBindingConfig>,
+    pub cursor_bottom: Option<KeyBindingConfig>,
     pub jump_next: Option<KeyBindingConfig>,
     pub jump_prev: Option<KeyBindingConfig>,
     pub jump_next_commit: Option<KeyBindingConfig>,

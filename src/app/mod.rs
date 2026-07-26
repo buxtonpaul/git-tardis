@@ -96,6 +96,9 @@ pub struct AppState {
     pub code_lines: Vec<String>,
     pub cursor_line: usize,        // 1-based index
     pub code_scroll_offset: usize, // 0-based top visible line index
+    pub code_viewport_height: usize,
+    pub sidebar_viewport_height: usize,
+    pub scrolloff: usize,
 
     pub status_message: String,
     pub running: bool,
@@ -133,6 +136,9 @@ impl AppState {
             code_lines: Vec::new(),
             cursor_line: 1,
             code_scroll_offset: 0,
+            code_viewport_height: 20,
+            sidebar_viewport_height: 20,
+            scrolloff: 3,
 
             status_message: "Press 'Tab' or 'h'/'l' to switch focus. 'm' to change nav mode."
                 .to_string(),
@@ -619,6 +625,7 @@ impl AppState {
     }
 
     pub fn ensure_cursor_visible(&mut self, viewport_height: usize) {
+        self.code_viewport_height = viewport_height;
         if self.code_lines.is_empty() || viewport_height == 0 {
             self.code_scroll_offset = 0;
             return;
@@ -626,15 +633,166 @@ impl AppState {
 
         let total_lines = self.code_lines.len();
         let cursor_idx = self.cursor_line.saturating_sub(1);
+        let eff_scrolloff = self.scrolloff.min(viewport_height.saturating_sub(1) / 2);
 
-        if cursor_idx < self.code_scroll_offset {
-            self.code_scroll_offset = cursor_idx;
-        } else if cursor_idx >= self.code_scroll_offset + viewport_height {
-            self.code_scroll_offset = cursor_idx + 1 - viewport_height;
+        let min_top = cursor_idx
+            .saturating_sub(viewport_height.saturating_sub(1).saturating_sub(eff_scrolloff));
+        let max_top = cursor_idx.saturating_sub(eff_scrolloff);
+
+        if self.code_scroll_offset < min_top {
+            self.code_scroll_offset = min_top;
+        } else if self.code_scroll_offset > max_top {
+            self.code_scroll_offset = max_top;
         }
 
-        if self.code_scroll_offset >= total_lines {
-            self.code_scroll_offset = total_lines.saturating_sub(1);
+        let max_scroll = total_lines.saturating_sub(viewport_height);
+        if self.code_scroll_offset > max_scroll && total_lines >= viewport_height {
+            self.code_scroll_offset = max_scroll;
+        }
+    }
+
+    pub fn scroll_half_page_down(&mut self) {
+        match self.active_panel {
+            ActivePanel::CodeViewer => {
+                let step = (self.code_viewport_height / 2).max(1);
+                self.cursor_line = (self.cursor_line + step).min(self.code_lines.len().max(1));
+                self.ensure_cursor_visible(self.code_viewport_height);
+                self.update_current_line_blame();
+                self.update_candidate_commits();
+            }
+            ActivePanel::Sidebar => {
+                let step = (self.sidebar_viewport_height / 2).max(1);
+                for _ in 0..step {
+                    self.move_selection_down();
+                }
+            }
+        }
+    }
+
+    pub fn scroll_half_page_up(&mut self) {
+        match self.active_panel {
+            ActivePanel::CodeViewer => {
+                let step = (self.code_viewport_height / 2).max(1);
+                self.cursor_line = self.cursor_line.saturating_sub(step).max(1);
+                self.ensure_cursor_visible(self.code_viewport_height);
+                self.update_current_line_blame();
+                self.update_candidate_commits();
+            }
+            ActivePanel::Sidebar => {
+                let step = (self.sidebar_viewport_height / 2).max(1);
+                for _ in 0..step {
+                    self.move_selection_up();
+                }
+            }
+        }
+    }
+
+    pub fn scroll_page_down(&mut self) {
+        match self.active_panel {
+            ActivePanel::CodeViewer => {
+                let step = self.code_viewport_height.saturating_sub(2).max(1);
+                self.cursor_line = (self.cursor_line + step).min(self.code_lines.len().max(1));
+                self.ensure_cursor_visible(self.code_viewport_height);
+                self.update_current_line_blame();
+                self.update_candidate_commits();
+            }
+            ActivePanel::Sidebar => {
+                let step = self.sidebar_viewport_height.saturating_sub(2).max(1);
+                for _ in 0..step {
+                    self.move_selection_down();
+                }
+            }
+        }
+    }
+
+    pub fn scroll_page_up(&mut self) {
+        match self.active_panel {
+            ActivePanel::CodeViewer => {
+                let step = self.code_viewport_height.saturating_sub(2).max(1);
+                self.cursor_line = self.cursor_line.saturating_sub(step).max(1);
+                self.ensure_cursor_visible(self.code_viewport_height);
+                self.update_current_line_blame();
+                self.update_candidate_commits();
+            }
+            ActivePanel::Sidebar => {
+                let step = self.sidebar_viewport_height.saturating_sub(2).max(1);
+                for _ in 0..step {
+                    self.move_selection_up();
+                }
+            }
+        }
+    }
+
+    pub fn scroll_line_down(&mut self) {
+        if self.active_panel == ActivePanel::CodeViewer && !self.code_lines.is_empty() {
+            let max_scroll = self
+                .code_lines
+                .len()
+                .saturating_sub(self.code_viewport_height);
+            if self.code_scroll_offset < max_scroll {
+                self.code_scroll_offset += 1;
+                let eff_scrolloff =
+                    self.scrolloff.min(self.code_viewport_height.saturating_sub(1) / 2);
+                let min_cursor = self.code_scroll_offset + eff_scrolloff + 1;
+                if self.cursor_line < min_cursor {
+                    self.cursor_line = min_cursor.min(self.code_lines.len());
+                    self.update_current_line_blame();
+                    self.update_candidate_commits();
+                }
+            }
+        }
+    }
+
+    pub fn scroll_line_up(&mut self) {
+        if self.active_panel == ActivePanel::CodeViewer && !self.code_lines.is_empty() {
+            if self.code_scroll_offset > 0 {
+                self.code_scroll_offset -= 1;
+                let eff_scrolloff =
+                    self.scrolloff.min(self.code_viewport_height.saturating_sub(1) / 2);
+                let max_cursor = self
+                    .code_scroll_offset
+                    + self.code_viewport_height.saturating_sub(eff_scrolloff);
+                if self.cursor_line > max_cursor {
+                    self.cursor_line = max_cursor.max(1);
+                    self.update_current_line_blame();
+                    self.update_candidate_commits();
+                }
+            }
+        }
+    }
+
+    pub fn center_cursor(&mut self) {
+        if self.active_panel == ActivePanel::CodeViewer && !self.code_lines.is_empty() {
+            let half_view = self.code_viewport_height / 2;
+            self.code_scroll_offset = (self.cursor_line.saturating_sub(1)).saturating_sub(half_view);
+            let max_scroll = self
+                .code_lines
+                .len()
+                .saturating_sub(self.code_viewport_height);
+            if self.code_scroll_offset > max_scroll {
+                self.code_scroll_offset = max_scroll;
+            }
+        }
+    }
+
+    pub fn cursor_top(&mut self) {
+        if self.active_panel == ActivePanel::CodeViewer && !self.code_lines.is_empty() {
+            self.code_scroll_offset = self.cursor_line.saturating_sub(1);
+            let max_scroll = self
+                .code_lines
+                .len()
+                .saturating_sub(self.code_viewport_height);
+            if self.code_scroll_offset > max_scroll {
+                self.code_scroll_offset = max_scroll;
+            }
+        }
+    }
+
+    pub fn cursor_bottom(&mut self) {
+        if self.active_panel == ActivePanel::CodeViewer && !self.code_lines.is_empty() {
+            let view_minus_1 = self.code_viewport_height.saturating_sub(1);
+            self.code_scroll_offset =
+                (self.cursor_line.saturating_sub(1)).saturating_sub(view_minus_1);
         }
     }
 
@@ -700,6 +858,15 @@ impl AppState {
             Action::CycleNavMode => self.cycle_navigation_mode(),
             Action::MoveUp => self.move_selection_up(),
             Action::MoveDown => self.move_selection_down(),
+            Action::HalfPageDown => self.scroll_half_page_down(),
+            Action::HalfPageUp => self.scroll_half_page_up(),
+            Action::PageDown => self.scroll_page_down(),
+            Action::PageUp => self.scroll_page_up(),
+            Action::ScrollLineDown => self.scroll_line_down(),
+            Action::ScrollLineUp => self.scroll_line_up(),
+            Action::CenterCursor => self.center_cursor(),
+            Action::CursorTop => self.cursor_top(),
+            Action::CursorBottom => self.cursor_bottom(),
             Action::Select => match self.sidebar_view {
                 SidebarView::FileExplorer | SidebarView::ModifiedFiles => {
                     self.load_currently_selected_file();

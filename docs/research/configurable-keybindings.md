@@ -92,6 +92,15 @@ Git-tardis provides both auto-mode jumps and mode-explicit shortcuts:
 | :--- | :--- | :--- | :--- |
 | `]` | `code_viewer` | `JumpNextAuto` | Jump to next commit using active navigation mode (`Commit`, `File`, `Function`, or `Line`). |
 | `[` | `code_viewer` | `JumpPrevAuto` | Jump to previous commit using active navigation mode. |
+| `<C-d>` | `global` | `HalfPageDown` | Scroll half-page down in active panel. |
+| `<C-u>` | `global` | `HalfPageUp` | Scroll half-page up in active panel. |
+| `<C-f>` / `<PageDown>` | `global` | `PageDown` | Scroll full-page down in active panel. |
+| `<C-b>` / `<PageUp>` | `global` | `PageUp` | Scroll full-page up in active panel. |
+| `<C-e>` | `code_viewer` | `ScrollLineDown` | Scroll viewport down 1 line. |
+| `<C-y>` | `code_viewer` | `ScrollLineUp` | Scroll viewport up 1 line. |
+| `zz` | `code_viewer` | `CenterCursor` | Center current cursor line in viewport. |
+| `zt` | `code_viewer` | `CursorTop` | Position current cursor line at top of viewport. |
+| `zb` | `code_viewer` | `CursorBottom` | Position current cursor line at bottom of viewport. |
 
 ---
 
