@@ -548,6 +548,25 @@ fn test_vim_scrolling_and_positioning_actions() {
 }
 
 #[test]
+fn test_sidebar_viewport_scrolling_on_selection() {
+    let backend = TestBackend::new(100, 12);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    let mut app = AppState::new(PathBuf::from("."));
+    app.files = (1..=15).map(|i| format!("file_{}.rs", i)).collect();
+    app.sidebar_view = SidebarView::FileExplorer;
+    app.file_selected = 12; // file_13.rs
+
+    terminal.draw(|f| render(f, &mut app)).unwrap();
+    let dbg = format!("{:?}", terminal.backend().buffer());
+
+    // File 13 should be scrolled into view
+    assert!(dbg.contains("file_13.rs"));
+    // File 1 should have scrolled out of view
+    assert!(!dbg.contains("file_1.rs"));
+}
+
+#[test]
 fn test_commit_timeline_candidate_highlighting() {
     let backend = TestBackend::new(100, 15);
     let mut terminal = Terminal::new(backend).unwrap();

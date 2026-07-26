@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs},
     Frame,
 };
 
@@ -80,32 +80,13 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     match state.sidebar_view {
         SidebarView::FileExplorer => {
+            let sel_index = if state.files.is_empty() {
+                0
+            } else {
+                state.file_selected.min(state.files.len() - 1)
+            };
             let items: Vec<ListItem> = state
                 .files
-                .iter()
-                .enumerate()
-                .map(|(i, f)| {
-                    let style = if i == state.file_selected && is_sidebar_active {
-                        Style::default().bg(Color::Blue).fg(Color::White)
-                    } else if i == state.file_selected {
-                        Style::default().fg(Color::Yellow)
-                    } else {
-                        Style::default()
-                    };
-                    ListItem::new(f.as_str()).style(style)
-                })
-                .collect();
-            let list = List::new(items).block(sidebar_block);
-            frame.render_widget(list, main_chunks[0]);
-        }
-        SidebarView::ModifiedFiles => {
-            let (list_items, sel_index) = if state.selected_commit_hash.is_some() {
-                (&state.modified_files, state.modified_selected)
-            } else {
-                (&state.dirty_files, state.dirty_selected)
-            };
-
-            let items: Vec<ListItem> = list_items
                 .iter()
                 .enumerate()
                 .map(|(i, f)| {
@@ -120,9 +101,52 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 })
                 .collect();
             let list = List::new(items).block(sidebar_block);
-            frame.render_widget(list, main_chunks[0]);
+            let mut list_state = ListState::default();
+            if !state.files.is_empty() {
+                list_state.select(Some(sel_index));
+            }
+            frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
+        }
+        SidebarView::ModifiedFiles => {
+            let (list_items, sel_index) = if state.selected_commit_hash.is_some() {
+                (&state.modified_files, state.modified_selected)
+            } else {
+                (&state.dirty_files, state.dirty_selected)
+            };
+            let safe_sel = if list_items.is_empty() {
+                0
+            } else {
+                sel_index.min(list_items.len() - 1)
+            };
+
+            let items: Vec<ListItem> = list_items
+                .iter()
+                .enumerate()
+                .map(|(i, f)| {
+                    let style = if i == safe_sel && is_sidebar_active {
+                        Style::default().bg(Color::Blue).fg(Color::White)
+                    } else if i == safe_sel {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(f.as_str()).style(style)
+                })
+                .collect();
+            let list = List::new(items).block(sidebar_block);
+            let mut list_state = ListState::default();
+            if !list_items.is_empty() {
+                list_state.select(Some(safe_sel));
+            }
+            frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
         }
         SidebarView::CommitTimeline => {
+            let safe_sel = if state.commits.is_empty() {
+                0
+            } else {
+                state.commit_selected.min(state.commits.len() - 1)
+            };
+
             let items: Vec<ListItem> = state
                 .commits
                 .iter()
@@ -135,12 +159,12 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     let prefix = if is_candidate { "* " } else { "  " };
                     let text = format!("{}{}", prefix, format!("{} {}", hash, msg));
 
-                    let style = if i == state.commit_selected && is_sidebar_active {
+                    let style = if i == safe_sel && is_sidebar_active {
                         Style::default()
                             .bg(Color::Blue)
                             .fg(Color::White)
                             .add_modifier(Modifier::BOLD)
-                    } else if i == state.commit_selected {
+                    } else if i == safe_sel {
                         Style::default()
                             .fg(Color::Yellow)
                             .add_modifier(Modifier::BOLD)
@@ -153,18 +177,28 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 })
                 .collect();
             let list = List::new(items).block(sidebar_block);
-            frame.render_widget(list, main_chunks[0]);
+            let mut list_state = ListState::default();
+            if !state.commits.is_empty() {
+                list_state.select(Some(safe_sel));
+            }
+            frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
         }
         SidebarView::TargetCandidates => {
+            let safe_sel = if state.candidate_commits.is_empty() {
+                0
+            } else {
+                state.candidate_selected.min(state.candidate_commits.len() - 1)
+            };
+
             let items: Vec<ListItem> = state
                 .candidate_commits
                 .iter()
                 .enumerate()
                 .map(|(i, (hash, msg))| {
                     let text = format!("{} {}", hash, msg);
-                    let style = if i == state.candidate_selected && is_sidebar_active {
+                    let style = if i == safe_sel && is_sidebar_active {
                         Style::default().bg(Color::Blue).fg(Color::White)
-                    } else if i == state.candidate_selected {
+                    } else if i == safe_sel {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default()
@@ -173,7 +207,11 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 })
                 .collect();
             let list = List::new(items).block(sidebar_block);
-            frame.render_widget(list, main_chunks[0]);
+            let mut list_state = ListState::default();
+            if !state.candidate_commits.is_empty() {
+                list_state.select(Some(safe_sel));
+            }
+            frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
         }
     }
 
