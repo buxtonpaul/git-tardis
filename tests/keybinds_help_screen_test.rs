@@ -34,7 +34,7 @@ fn test_keybinds_help_toggle_and_dismissal() {
 
 #[test]
 fn test_keybinds_help_screen_rendering() {
-    let backend = TestBackend::new(100, 35);
+    let backend = TestBackend::new(100, 40);
     let mut terminal = Terminal::new(backend).unwrap();
 
     let mut app = AppState::new(PathBuf::from("."));
@@ -52,5 +52,6 @@ fn test_keybinds_help_screen_rendering() {
     assert!(dbg.contains("Code Viewer & Time Travel"));
     assert!(dbg.contains("Toggle Keybindings Help Screen"));
     assert!(dbg.contains("Switch Focus between Sidebar and Code Viewer"));
+    assert!(dbg.contains("Toggle File Viewer Mode"));
     assert!(dbg.contains("Press '?' or 'Esc' to close this help window"));
 }

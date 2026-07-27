@@ -9,6 +9,30 @@ pub enum InputPrompt {
     SearchSymbol,
 }
 
+/// Mode for displaying file contents vs git diff in the File Viewer panel
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FileViewMode {
+    #[default]
+    Full,
+    Diff,
+}
+
+impl FileViewMode {
+    pub fn name(&self) -> &'static str {
+        match self {
+            FileViewMode::Full => "FULL",
+            FileViewMode::Diff => "DIFF",
+        }
+    }
+
+    pub fn toggle(&self) -> Self {
+        match self {
+            FileViewMode::Full => FileViewMode::Diff,
+            FileViewMode::Diff => FileViewMode::Full,
+        }
+    }
+}
+
 /// Domain representation of a commit summary in navigation lists.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitSummary {

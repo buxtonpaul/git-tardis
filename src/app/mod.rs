@@ -121,6 +121,8 @@ pub struct AppState {
     pub blame_subprocess_count: usize,
     pub last_loaded_file: Option<String>,
     pub last_loaded_commit: Option<String>,
+    pub file_view_mode: FileViewMode,
+    pub last_loaded_view_mode: Option<FileViewMode>,
     pub render_markdown_formatted: bool,
 
     pub input_prompt: Option<InputPrompt>,
@@ -190,6 +192,8 @@ impl AppState {
             blame_subprocess_count: 0,
             last_loaded_file: None,
             last_loaded_commit: None,
+            file_view_mode: FileViewMode::Full,
+            last_loaded_view_mode: None,
             render_markdown_formatted: true,
 
             input_prompt: None,
@@ -579,9 +583,16 @@ impl AppState {
                 if !items.is_empty() {
                     self.file_selected = self.file_selected.min(items.len() - 1);
                     let item = &items[self.file_selected];
-                    if !item.is_dir {
+                    if !item.is_dir || self.file_view_mode == FileViewMode::Diff {
                         self.active_file = Some(item.path.clone());
                     } else {
+                        self.active_file = None;
+                        self.code_lines.clear();
+                        self.cursor_line = 1;
+                        self.code_scroll_offset = 0;
+                        self.last_loaded_file = None;
+                        self.last_loaded_commit = None;
+                        self.last_loaded_view_mode = None;
                         self.status_message = format!("Selected directory: {}", item.name);
                         return;
                     }
@@ -609,21 +620,9 @@ impl AppState {
 
         let target_file = self.current_file_path();
         let target_commit = self.selected_commit_hash.clone();
+        let target_view_mode = self.file_view_mode;
 
-        let clean_path = match target_file {
-            Some(p) => p,
-            None => {
-                self.code_lines.clear();
-                self.cursor_line = 1;
-                self.code_scroll_offset = 0;
-                self.last_loaded_file = None;
-                self.last_loaded_commit = None;
-                self.update_current_line_blame();
-                self.update_candidate_commits();
-                self.update_file_diff_highlights();
-                return;
-            }
-        };
+        let clean_path = target_file;
 
         let old_cursor_line = self.cursor_line;
         let old_scroll_offset = self.code_scroll_offset;
@@ -631,59 +630,122 @@ impl AppState {
 
         let mut loaded_lines: Option<Vec<String>> = None;
 
-        if let Some(hash) = &target_commit {
-            let short_hash = &hash[..7.min(hash.len())];
+        if target_view_mode == FileViewMode::Diff {
             if let Some(repo) = self.repo() {
-                match repo.get_file_at_commit(hash, &clean_path) {
-                    Ok(content) => {
-                        loaded_lines = Some(content.lines().map(|s| s.to_string()).collect());
-                        self.status_message =
-                            format!("Loaded {} at commit {}", clean_path, short_hash);
+                let diff_res = if let Some(hash) = &target_commit {
+                    if let Some(path) = &clean_path {
+                        repo.get_diff_file(hash, path)
+                    } else {
+                        repo.get_diff_commit(hash)
+                    }
+                } else {
+                    repo.get_working_diff(clean_path.as_deref())
+                };
+
+                match diff_res {
+                    Ok(diff_text) => {
+                        let trimmed = diff_text.trim();
+                        if trimmed.is_empty() {
+                            loaded_lines = Some(vec!["(No diff for working directory / file)".to_string()]);
+                        } else {
+                            loaded_lines = Some(diff_text.lines().map(|s| s.to_string()).collect());
+                        }
+                        if let Some(hash) = &target_commit {
+                            let short_hash = &hash[..7.min(hash.len())];
+                            if let Some(path) = &clean_path {
+                                self.status_message = format!("Loaded diff for {} at commit {}", path, short_hash);
+                            } else {
+                                self.status_message = format!("Loaded diff for commit {}", short_hash);
+                            }
+                        } else if let Some(path) = &clean_path {
+                            self.status_message = format!("Loaded working diff for {}", path);
+                        } else {
+                            self.status_message = "Loaded working directory diff".to_string();
+                        }
                     }
                     Err(_) => {
-                        loaded_lines = Some(vec![format!(
-                            "File '{}' did not exist at commit {}",
-                            clean_path, short_hash
-                        )]);
-                        self.status_message = format!(
-                            "File '{}' did not exist at commit {}",
-                            clean_path, short_hash
-                        );
+                        let msg = clean_path
+                            .as_deref()
+                            .map(|p| format!("Could not load diff for {}", p))
+                            .unwrap_or_else(|| "Could not load working directory diff".to_string());
+                        loaded_lines = Some(vec![msg.clone()]);
+                        self.status_message = msg;
                     }
                 }
+            } else {
+                loaded_lines = Some(vec!["Not a git repository".to_string()]);
             }
         } else {
-            let file_path = self.repo_path.join(&clean_path);
-            if let Ok(content) = std::fs::read_to_string(&file_path) {
-                loaded_lines = Some(content.lines().map(|s| s.to_string()).collect());
-                self.status_message = format!("Loaded file: {}", clean_path);
+            let file_path_str = match clean_path.clone() {
+                Some(p) => p,
+                None => {
+                    self.code_lines.clear();
+                    self.cursor_line = 1;
+                    self.code_scroll_offset = 0;
+                    self.last_loaded_file = None;
+                    self.last_loaded_commit = None;
+                    self.last_loaded_view_mode = None;
+                    self.update_current_line_blame();
+                    self.update_candidate_commits();
+                    self.update_file_diff_highlights();
+                    return;
+                }
+            };
+
+            if let Some(hash) = &target_commit {
+                let short_hash = &hash[..7.min(hash.len())];
+                if let Some(repo) = self.repo() {
+                    match repo.get_file_at_commit(hash, &file_path_str) {
+                        Ok(content) => {
+                            loaded_lines = Some(content.lines().map(|s| s.to_string()).collect());
+                            self.status_message =
+                                format!("Loaded {} at commit {}", file_path_str, short_hash);
+                        }
+                        Err(_) => {
+                            loaded_lines = Some(vec![format!(
+                                "File '{}' did not exist at commit {}",
+                                file_path_str, short_hash
+                            )]);
+                            self.status_message = format!(
+                                "File '{}' did not exist at commit {}",
+                                file_path_str, short_hash
+                            );
+                        }
+                    }
+                }
             } else {
-                loaded_lines = Some(Vec::new());
-                self.status_message = format!("Could not read file: {}", clean_path);
+                let file_path = self.repo_path.join(&file_path_str);
+                if let Ok(content) = std::fs::read_to_string(&file_path) {
+                    loaded_lines = Some(content.lines().map(|s| s.to_string()).collect());
+                    self.status_message = format!("Loaded file: {}", file_path_str);
+                } else {
+                    loaded_lines = Some(Vec::new());
+                    self.status_message = format!("Could not read file: {}", file_path_str);
+                }
             }
         }
 
         if let Some(new_lines) = loaded_lines {
-            let same_file = self.last_loaded_file.as_ref() == Some(&clean_path);
+            let same_file = self.last_loaded_file == clean_path;
             let same_commit = self.last_loaded_commit == target_commit;
+            let same_view_mode = self.last_loaded_view_mode == Some(target_view_mode);
 
-            if same_file && !new_lines.is_empty() {
+            if same_file && same_view_mode && !new_lines.is_empty() {
                 if same_commit {
                     let new_cursor = old_cursor_line.clamp(1, new_lines.len());
-                    let max_scroll = new_lines.len().saturating_sub(1);
-                    let clamped_scroll = old_scroll_offset.min(max_scroll);
+                    let max_scroll = old_scroll_offset.min(new_lines.len().saturating_sub(1));
 
                     self.code_lines = new_lines;
                     self.cursor_line = new_cursor;
-                    self.code_scroll_offset = clamped_scroll;
-                } else {
+                    self.code_scroll_offset = max_scroll;
+                } else if let Some(path) = &clean_path {
                     let diff_text = self
                         .repo()
                         .and_then(|repo| {
                             repo.get_diff_between(
                                 self.last_loaded_commit.as_deref(),
                                 target_commit.as_deref(),
-                                &clean_path,
+                                path,
                             )
                             .ok()
                         })
@@ -699,6 +761,10 @@ impl AppState {
                     self.code_lines = new_lines;
                     self.cursor_line = new_cursor;
                     self.code_scroll_offset = clamped_scroll;
+                } else {
+                    self.code_lines = new_lines;
+                    self.cursor_line = 1;
+                    self.code_scroll_offset = 0;
                 }
 
                 if self.code_viewport_height > 0 {
@@ -711,17 +777,27 @@ impl AppState {
             }
         }
 
-        self.last_loaded_file = Some(clean_path);
+        self.last_loaded_file = clean_path;
         self.last_loaded_commit = target_commit;
+        self.last_loaded_view_mode = Some(target_view_mode);
 
         self.update_current_line_blame();
         self.update_candidate_commits();
         self.update_file_diff_highlights();
     }
 
+    pub fn toggle_file_view_mode(&mut self) {
+        self.file_view_mode = self.file_view_mode.toggle();
+        self.status_message = format!("File view mode: {}", self.file_view_mode.name());
+        self.load_currently_selected_file();
+    }
+
     pub fn update_file_diff_highlights(&mut self) {
         self.ensure_repo();
         self.file_diff_highlights.clear();
+        if self.file_view_mode == FileViewMode::Diff {
+            return;
+        }
         let cur_file = match self.current_file_path() {
             Some(f) => f,
             None => return,
@@ -750,7 +826,7 @@ impl AppState {
             SidebarView::FileExplorer => {
                 let items = self.visible_file_items();
                 if let Some(item) = items.get(self.file_selected) {
-                    if !item.is_dir {
+                    if !item.is_dir || self.file_view_mode == FileViewMode::Diff {
                         Some(item.path.clone())
                     } else {
                         self.files.first().cloned()
@@ -1105,6 +1181,9 @@ impl AppState {
                         "DISABLED"
                     }
                 );
+            }
+            Action::ToggleFileViewMode => {
+                self.toggle_file_view_mode();
             }
             Action::PromptGotoLine => {
                 self.input_prompt = Some(InputPrompt::GotoLine);

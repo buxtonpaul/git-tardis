@@ -151,6 +151,9 @@ pub enum Action {
     // Markdown rendering action
     ToggleMarkdownFormat,
 
+    // File viewer mode action
+    ToggleFileViewMode,
+
     // In-file navigation actions
     PromptGotoLine,
     PromptSearchText,
@@ -201,6 +204,7 @@ impl KeymapRegistry {
         self.bind(Scope::Global, "?", Action::ToggleHelp);
         self.bind(Scope::Global, "S", Action::ToggleSplashscreen);
         self.bind(Scope::Global, "M", Action::ToggleMarkdownFormat);
+        self.bind(Scope::Global, "d", Action::ToggleFileViewMode);
         self.bind(Scope::Global, "<Tab>", Action::ToggleFocus);
         self.bind(Scope::Global, "h", Action::ToggleFocus);
         self.bind(Scope::Global, "l", Action::ToggleFocus);
@@ -407,6 +411,12 @@ impl KeymapRegistry {
             scope,
             &mappings.toggle_markdown_format,
             Action::ToggleMarkdownFormat,
+        );
+        bind_list(
+            self,
+            scope,
+            &mappings.toggle_file_view_mode,
+            Action::ToggleFileViewMode,
         );
         bind_list(
             self,
