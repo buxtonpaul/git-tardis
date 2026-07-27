@@ -626,6 +626,74 @@ impl AppState {
         self.blame_cache.clear();
     }
 
+    pub fn reload_repo_data(&mut self) {
+        if let Some(repo) = self.repo() {
+            if let Ok(files) = repo.list_files() {
+                self.files = files;
+                self.expand_all_folders();
+            }
+            if let Ok(statuses) = repo.get_status() {
+                let items: Vec<ModifiedFileEntry> =
+                    statuses.into_iter().map(ModifiedFileEntry::from).collect();
+                self.uncommitted_files = items.clone();
+                self.dirty_files = items;
+            }
+            if let Ok(commits) = repo.get_commit_history(Some(50)) {
+                self.commits = commits.into_iter().map(CommitSummary::from).collect();
+            }
+            self.load_currently_selected_file();
+        }
+    }
+
+    pub fn trigger_edit_here(&mut self) -> crate::rebase::RebaseResult {
+        let target_hash = match self.selected_commit_hash.clone().or_else(|| {
+            if self.sidebar_view == SidebarView::CommitTimeline {
+                if self.timeline_filter == TimelineFilter::All {
+                    self.commits
+                        .get(self.commit_selected)
+                        .map(|c| c.hash.clone())
+                } else {
+                    self.candidate_commits
+                        .get(self.candidate_selected)
+                        .map(|c| c.hash.clone())
+                }
+            } else {
+                self.commits
+                    .get(self.commit_selected)
+                    .map(|c| c.hash.clone())
+            }
+        }) {
+            Some(h) => h,
+            None => {
+                self.status_message = "No commit selected for Edit Here".to_string();
+                return crate::rebase::RebaseResult::Error("No commit selected".to_string());
+            }
+        };
+
+        let stdin = std::io::stdin();
+        let result = crate::rebase::execute_edit_here(&self.repo_path, &target_hash, stdin.lock());
+
+        match &result {
+            crate::rebase::RebaseResult::Completed => {
+                let short_hash = &target_hash[..7.min(target_hash.len())];
+                self.status_message = format!("Successfully edited commit {}", short_hash);
+                self.reload_repo_data();
+            }
+            crate::rebase::RebaseResult::Aborted => {
+                self.status_message = "Rebase aborted. Restored repository state.".to_string();
+                self.reload_repo_data();
+            }
+            crate::rebase::RebaseResult::ConflictExited => {
+                self.running = false;
+            }
+            crate::rebase::RebaseResult::Error(msg) => {
+                self.status_message = format!("Edit Here error: {}", msg);
+            }
+        }
+
+        result
+    }
+
     pub fn load_currently_selected_file(&mut self) {
         self.ensure_repo();
         match self.sidebar_view {
@@ -1391,7 +1459,7 @@ impl AppState {
                 self.status_message = "Triggered Inline Rewrite".to_string();
             }
             Action::EditHere => {
-                self.status_message = "Triggered Edit Here".to_string();
+                self.trigger_edit_here();
             }
             Action::ExpandFolder => {
                 if self.sidebar_view == SidebarView::FileExplorer {
