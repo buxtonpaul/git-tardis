@@ -212,6 +212,29 @@ pub fn execute_edit_here<R: BufRead>(
 
         // After subshell exits, check if rebase is still in progress
         if rebase_merge_dir.exists() {
+            // Auto-stage and amend any uncommitted file changes made during the edit session
+            let has_uncommitted = Command::new("git")
+                .current_dir(repo_path)
+                .args(["status", "--porcelain"])
+                .output()
+                .map(|out| !out.stdout.iter().all(|b| b.is_ascii_whitespace()))
+                .unwrap_or(false);
+
+            if has_uncommitted {
+                println!(
+                    "\nAuto-staging and amending changes into commit {}...",
+                    &target_hash[..7.min(target_hash.len())]
+                );
+                let _ = Command::new("git")
+                    .current_dir(repo_path)
+                    .args(["add", "-A"])
+                    .status();
+                let _ = Command::new("git")
+                    .current_dir(repo_path)
+                    .args(["commit", "--amend", "--no-edit"])
+                    .status();
+            }
+
             println!("\nResuming rebase (`git rebase --continue`)...");
             let continue_status = Command::new("git")
                 .current_dir(repo_path)
