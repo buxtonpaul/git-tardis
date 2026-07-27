@@ -12,13 +12,17 @@ fn test_keybinds_help_toggle_and_dismissal() {
     // Dispatch Action::ToggleHelp (triggered by '?')
     app.dispatch_action(Action::ToggleHelp);
     assert!(app.show_help);
-    assert!(app.status_message.contains("Opened keybindings help overlay"));
+    assert!(app
+        .status_message
+        .contains("Opened keybindings help overlay"));
 
     // Pressing Esc or 'q' (Action::Quit) dismisses the help overlay without quitting app
     app.dispatch_action(Action::Quit);
     assert!(!app.show_help);
     assert!(app.running);
-    assert!(app.status_message.contains("Closed keybindings help overlay"));
+    assert!(app
+        .status_message
+        .contains("Closed keybindings help overlay"));
 
     // Toggling help again and pressing '?' again toggles it off
     app.dispatch_action(Action::ToggleHelp);

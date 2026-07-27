@@ -165,8 +165,9 @@ impl AppState {
             sidebar_viewport_height: 20,
             scrolloff: 3,
 
-            status_message: "Press 'Tab' or 'h'/'l' to switch focus. '?' for help. 'm' for nav mode."
-                .to_string(),
+            status_message:
+                "Press 'Tab' or 'h'/'l' to switch focus. '?' for help. 'm' for nav mode."
+                    .to_string(),
             running: true,
             show_help: false,
             show_splashscreen: false,
@@ -219,7 +220,10 @@ impl AppState {
         };
 
         if !parent_path.is_empty() {
-            if let Some(parent_idx) = items.iter().position(|it| it.path == parent_path && it.is_dir) {
+            if let Some(parent_idx) = items
+                .iter()
+                .position(|it| it.path == parent_path && it.is_dir)
+            {
                 self.file_selected = parent_idx;
                 self.load_currently_selected_file();
             }
@@ -498,7 +502,6 @@ impl AppState {
             // Update file explorer list for this target commit
             if let Ok(tree_files) = repo.list_files_at_commit(&hash) {
                 self.files = tree_files;
-                self.expand_all_folders();
                 if let Some(cur_file) = self.current_file_path() {
                     let items = self.visible_file_items();
                     if let Some(f_idx) = items.iter().position(|it| it.path == cur_file) {
@@ -523,7 +526,6 @@ impl AppState {
         if let Some(repo) = self.repo() {
             if let Ok(wd_files) = repo.list_files() {
                 self.files = wd_files;
-                self.expand_all_folders();
                 if let Some(cur_file) = self.current_file_path() {
                     let items = self.visible_file_items();
                     if let Some(f_idx) = items.iter().position(|it| it.path == cur_file) {
