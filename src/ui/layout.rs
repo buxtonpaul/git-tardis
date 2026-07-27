@@ -492,7 +492,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             .title(" TARDIS Splashscreen / About ")
             .border_style(Style::default().fg(Color::Cyan));
 
-        let splash_lines = crate::ui::splash::render_splashscreen_lines(state.git_version.as_deref());
+        let splash_lines =
+            crate::ui::splash::render_splashscreen_lines(state.git_version.as_deref());
         let splash_paragraph = Paragraph::new(splash_lines).block(splash_block);
         frame.render_widget(splash_paragraph, area);
     }

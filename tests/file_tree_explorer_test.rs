@@ -72,32 +72,20 @@ fn test_file_tree_keyboard_navigation_and_parent_jumping() {
 
     // Pressing CollapseFolder ('h' or '<Left>') on a file node jumps selection to parent directory ("src/app")
     app.dispatch_action(Action::CollapseFolder);
-    assert_eq!(
-        app.visible_file_items()[app.file_selected].name,
-        "app/"
-    );
+    assert_eq!(app.visible_file_items()[app.file_selected].name, "app/");
 
     // Pressing CollapseFolder again on an expanded directory node collapses the directory
     app.dispatch_action(Action::CollapseFolder);
-    assert_eq!(
-        app.visible_file_items()[app.file_selected].name,
-        "app/"
-    );
+    assert_eq!(app.visible_file_items()[app.file_selected].name, "app/");
     assert!(!app.visible_file_items()[app.file_selected].is_expanded);
 
     // Pressing CollapseFolder on a collapsed directory jumps selection to top parent ("src/")
     app.dispatch_action(Action::CollapseFolder);
-    assert_eq!(
-        app.visible_file_items()[app.file_selected].name,
-        "src/"
-    );
+    assert_eq!(app.visible_file_items()[app.file_selected].name, "src/");
 
     // Pressing CollapseFolder on an expanded top parent ("src/") collapses it
     app.dispatch_action(Action::CollapseFolder);
-    assert_eq!(
-        app.visible_file_items()[app.file_selected].name,
-        "src/"
-    );
+    assert_eq!(app.visible_file_items()[app.file_selected].name, "src/");
     assert!(!app.visible_file_items()[app.file_selected].is_expanded);
 
     // Pressing ExpandFolder ('<Right>') on a collapsed directory expands it
@@ -129,4 +117,75 @@ fn test_file_explorer_rendering_tree_nodes() {
     assert!(dbg.contains("mod.rs"));
     assert!(dbg.contains("main.rs"));
     assert!(dbg.contains("README.md"));
+}
+
+#[test]
+fn test_folder_expansion_state_preserved_across_commit_switches_and_reset() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path();
+
+    let run = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(repo_path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Test User"]);
+    run(&["config", "user.email", "test@example.com"]);
+
+    // Commit 1: Add src/app/mod.rs and docs/guide.md
+    std::fs::create_dir_all(repo_path.join("src/app")).unwrap();
+    std::fs::create_dir_all(repo_path.join("docs")).unwrap();
+    std::fs::write(repo_path.join("src/app/mod.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(repo_path.join("docs/guide.md"), "# Guide\n").unwrap();
+    run(&["add", "."]);
+    run(&["commit", "-m", "Commit 1"]);
+
+    // Commit 2: Add src/app/extra.rs
+    std::fs::write(repo_path.join("src/app/extra.rs"), "// extra\n").unwrap();
+    run(&["add", "."]);
+    run(&["commit", "-m", "Commit 2"]);
+
+    let repo = git_tardis::git::GitRepo::open(repo_path).unwrap();
+    let history = repo.get_commit_history(None).unwrap();
+
+    let commit2_hash = history[0].hash.clone(); // latest
+    let commit1_hash = history[1].hash.clone(); // earlier
+
+    let mut app = AppState::new(repo_path.to_path_buf());
+    app.files = repo.list_files().unwrap();
+    app.expand_all_folders();
+
+    // Verify initially "docs" and "src" and "src/app" are all expanded
+    assert!(app.expanded_folders.contains("docs"));
+    assert!(app.expanded_folders.contains("src"));
+    assert!(app.expanded_folders.contains("src/app"));
+
+    // User collapses "src/app"
+    app.collapse_folder("src/app");
+    assert!(!app.expanded_folders.contains("src/app"));
+
+    // 1. Switch time-travel target to Commit 1
+    app.update_state_for_commit_hash(commit1_hash.clone());
+
+    // "src/app" MUST remain collapsed
+    assert!(!app.expanded_folders.contains("src/app"));
+    assert!(app.expanded_folders.contains("docs"));
+    assert!(app.expanded_folders.contains("src"));
+
+    // 2. Switch time-travel target to Commit 2
+    app.update_state_for_commit_hash(commit2_hash.clone());
+
+    // "src/app" MUST still remain collapsed
+    assert!(!app.expanded_folders.contains("src/app"));
+
+    // 3. Reset time travel (back to working directory)
+    app.reset_time_travel();
+
+    // "src/app" MUST still remain collapsed
+    assert!(!app.expanded_folders.contains("src/app"));
 }

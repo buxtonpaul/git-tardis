@@ -65,7 +65,9 @@ fn add_path_components(
             });
         }
     } else {
-        let pos = nodes.iter().position(|n| n.name == current_name && n.is_dir);
+        let pos = nodes
+            .iter()
+            .position(|n| n.name == current_name && n.is_dir);
         let dir_idx = match pos {
             Some(idx) => idx,
             None => {
