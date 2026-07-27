@@ -69,14 +69,14 @@ fn test_sidebar_tab_views_rendering() {
     let dbg2 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg2.contains("mod1.rs (M)"));
 
-    // Tab 3: Commit Timeline
+    // Tab 3: Commit Timeline (ALL)
     app.set_sidebar_view(SidebarView::CommitTimeline);
     terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg3 = format!("{:?}", terminal.backend().buffer());
     assert!(dbg3.contains("1234567 commit message"));
 
-    // Tab 4: Target Candidates
-    app.set_sidebar_view(SidebarView::TargetCandidates);
+    // Tab 3: Commit Timeline (CANDIDATES)
+    app.toggle_timeline_filter();
     app.candidate_commits = vec![("7654321", "candidate commit").into()];
     terminal.draw(|f| render(f, &mut app)).unwrap();
     let dbg4 = format!("{:?}", terminal.backend().buffer());
@@ -587,6 +587,45 @@ fn test_commit_timeline_candidate_highlighting() {
     assert!(dbg.contains("* 1111111 Candidate Commit"));
     // Non-candidate commit should have spaces prefix
     assert!(dbg.contains("  2222222 Non-candidate Commit"));
+}
+
+#[test]
+fn test_timeline_filter_toggle_action() {
+    use git_tardis::app::TimelineFilter;
+
+    let backend = TestBackend::new(100, 15);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    let mut app = AppState::new(PathBuf::from("."));
+    app.commits = vec![
+        ("1111111", "Commit 1").into(),
+        ("2222222", "Commit 2").into(),
+    ];
+    app.candidate_commits = vec![("1111111", "Commit 1").into()];
+    app.sidebar_view = SidebarView::CommitTimeline;
+
+    // Default filter is TimelineFilter::All
+    assert_eq!(app.timeline_filter, TimelineFilter::All);
+    terminal.draw(|f| render(f, &mut app)).unwrap();
+    let dbg_all = format!("{:?}", terminal.backend().buffer());
+    assert!(dbg_all.contains("3: Commit Timeline [ALL]"));
+    assert!(dbg_all.contains("1111111 Commit 1"));
+    assert!(dbg_all.contains("2222222 Commit 2"));
+
+    // Toggle filter to CANDIDATES
+    app.dispatch_action(Action::ToggleTimelineFilter);
+    assert_eq!(app.timeline_filter, TimelineFilter::Candidates);
+    app.candidate_commits = vec![("1111111", "Commit 1").into()];
+
+    terminal.draw(|f| render(f, &mut app)).unwrap();
+    let dbg_cand = format!("{:?}", terminal.backend().buffer());
+    assert!(dbg_cand.contains("3: Commit Timeline [CANDIDATES]"));
+    assert!(dbg_cand.contains("* 1111111 Commit 1"));
+    assert!(!dbg_cand.contains("2222222 Commit 2"));
+
+    // Toggle filter back to ALL
+    app.dispatch_action(Action::ToggleTimelineFilter);
+    assert_eq!(app.timeline_filter, TimelineFilter::All);
 }
 
 #[test]

@@ -210,7 +210,8 @@ fn test_sidebar_views_and_commit_queries_comparison() {
     );
 
     // 4. Target Candidates View Comparison
-    app.set_sidebar_view(SidebarView::TargetCandidates);
+    app.set_sidebar_view(SidebarView::CommitTimeline);
+    app.toggle_timeline_filter(); // Switch timeline filter to CANDIDATES
     app.set_navigation_mode(NavigationMode::File);
     let cur_file = app.current_file_path().unwrap();
     let baseline_file_commits = baseline_repo.get_file_commits(&cur_file, None).unwrap();

@@ -363,8 +363,10 @@ fn test_candidate_commits_sidebar_navigation() {
 
     // Switch to File mode
     app.set_navigation_mode(NavigationMode::File);
-    // Switch to Tab 4 (Target Candidates)
-    app.set_sidebar_view(git_tardis::app::SidebarView::TargetCandidates);
+    // Switch to Timeline view with Candidates filter
+    app.set_sidebar_view(git_tardis::app::SidebarView::CommitTimeline);
+    app.timeline_filter = git_tardis::app::TimelineFilter::Candidates;
+    app.update_candidate_commits();
 
     // Candidates in File mode for file_a.txt should only include C3 and C1 (2 commits)
     assert_eq!(app.candidate_commits.len(), 2);
@@ -521,8 +523,10 @@ fn test_sidebar_commit_list_views_bracket_navigation() {
     app.set_navigation_mode(NavigationMode::File);
     assert_eq!(app.active_panel, git_tardis::app::ActivePanel::Sidebar);
 
-    // 1. In TargetCandidates view in Sidebar (File mode candidates for file_a.txt: C3 and C1)
-    app.set_sidebar_view(git_tardis::app::SidebarView::TargetCandidates);
+    // 1. In CommitTimeline view with Candidates filter (File mode candidates for file_a.txt: C3 and C1)
+    app.set_sidebar_view(git_tardis::app::SidebarView::CommitTimeline);
+    app.timeline_filter = git_tardis::app::TimelineFilter::Candidates;
+    app.update_candidate_commits();
     assert_eq!(app.candidate_commits.len(), 2);
     assert!(app.candidate_commits[0].message.contains("C3"));
     assert!(app.candidate_commits[1].message.contains("C1"));

@@ -69,7 +69,7 @@ pub fn render_splashscreen_lines(git_version: Option<&str>) -> Vec<Line<'static>
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Press [?] for Keybindings Help | [Tab] Switch Focus Panel | [1-4] Sidebar Tabs",
+        "Press [?] for Keybindings Help | [Tab] Switch Focus Panel | [1-3] Sidebar Tabs | [c] Filter",
         Style::default()
             .fg(Color::Green)
             .add_modifier(Modifier::ITALIC),
