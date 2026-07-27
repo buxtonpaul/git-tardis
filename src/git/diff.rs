@@ -85,7 +85,7 @@ impl GitRepo {
     pub fn get_untracked_diff(&self, path: &str) -> Result<String, GitError> {
         let output = std::process::Command::new("git")
             .current_dir(&self.work_dir)
-            .args(&["diff", "--no-index", "/dev/null", path])
+            .args(["diff", "--no-index", "/dev/null", path])
             .output()?;
 
         let diff = String::from_utf8_lossy(&output.stdout).to_string();

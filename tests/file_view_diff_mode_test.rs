@@ -95,7 +95,8 @@ fn test_file_view_mode_toggle_and_diff_display() {
     assert!(app
         .code_lines
         .iter()
-        .any(|l| l.starts_with("-    println!(\"v1\");") || l.starts_with("+    println!(\"v2 modified\");")));
+        .any(|l| l.starts_with("-    println!(\"v1\");")
+            || l.starts_with("+    println!(\"v2 modified\");")));
 
     // Render UI and verify title has "View: [DIFF]"
     terminal.draw(|f| render(f, &mut app)).unwrap();
@@ -105,10 +106,7 @@ fn test_file_view_mode_toggle_and_diff_display() {
     // Toggle back to Full view mode
     app.dispatch_action(Action::ToggleFileViewMode);
     assert_eq!(app.file_view_mode, FileViewMode::Full);
-    assert!(
-        app.status_message.contains("Loaded file")
-            || app.status_message.contains("Loaded")
-    );
+    assert!(app.status_message.contains("Loaded file") || app.status_message.contains("Loaded"));
     assert!(app.code_lines.contains(&"fn main() {".to_string()));
 }
 
@@ -150,16 +148,16 @@ fn test_working_directory_diff_and_untracked_files() {
 
     // Set sidebar view to ModifiedFiles and set dirty_files to untracked.rs
     app.sidebar_view = SidebarView::ModifiedFiles;
-    app.dirty_files = vec![git_tardis::app::ModifiedFileEntry::new("untracked.rs", "??")];
+    app.dirty_files = vec![git_tardis::app::ModifiedFileEntry::new(
+        "untracked.rs",
+        "??",
+    )];
     app.dirty_selected = 0;
     app.file_view_mode = FileViewMode::Diff;
     app.load_currently_selected_file();
 
     // Verify untracked file diff shows additions
-    assert!(app
-        .code_lines
-        .iter()
-        .any(|l| l.contains("untracked.rs")));
+    assert!(app.code_lines.iter().any(|l| l.contains("untracked.rs")));
     assert!(app
         .code_lines
         .iter()
@@ -174,10 +172,7 @@ fn test_working_directory_diff_and_untracked_files() {
     app.load_currently_selected_file();
 
     assert!(app.status_message.contains("working directory diff"));
-    assert!(app
-        .code_lines
-        .iter()
-        .any(|l| l.contains("untracked.rs")));
+    assert!(app.code_lines.iter().any(|l| l.contains("untracked.rs")));
 }
 
 #[test]
@@ -251,10 +246,7 @@ fn test_directory_diff_includes_subdirectories() {
     app.load_currently_selected_file();
 
     // Verify folder diff includes files from nested subdirectories
-    assert!(app
-        .code_lines
-        .iter()
-        .any(|l| l.contains("src/sub/mod.rs")));
+    assert!(app.code_lines.iter().any(|l| l.contains("src/sub/mod.rs")));
     assert!(app
         .code_lines
         .iter()

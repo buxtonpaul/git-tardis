@@ -33,6 +33,30 @@ impl FileViewMode {
     }
 }
 
+/// Filter mode for the Timeline sidebar view (All commits vs Candidate commits)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TimelineFilter {
+    #[default]
+    All,
+    Candidates,
+}
+
+impl TimelineFilter {
+    pub fn name(&self) -> &'static str {
+        match self {
+            TimelineFilter::All => "ALL",
+            TimelineFilter::Candidates => "CANDIDATES",
+        }
+    }
+
+    pub fn toggle(&self) -> Self {
+        match self {
+            TimelineFilter::All => TimelineFilter::Candidates,
+            TimelineFilter::Candidates => TimelineFilter::All,
+        }
+    }
+}
+
 /// Domain representation of a commit summary in navigation lists.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitSummary {

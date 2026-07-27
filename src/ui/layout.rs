@@ -29,18 +29,18 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         None => "2: Dirty Files".to_string(),
     };
 
+    let timeline_title = format!("3: Commit Timeline [{}]", state.timeline_filter.name());
+
     let sidebar_titles = vec![
         SidebarView::FileExplorer.name().to_string(),
         tab2_title.clone(),
-        SidebarView::CommitTimeline.name().to_string(),
-        SidebarView::TargetCandidates.name().to_string(),
+        timeline_title.clone(),
     ];
 
     let selected_tab = match state.sidebar_view {
         SidebarView::FileExplorer => 0,
         SidebarView::ModifiedFiles => 1,
         SidebarView::CommitTimeline => 2,
-        SidebarView::TargetCandidates => 3,
     };
 
     let tabs = Tabs::new(sidebar_titles)
@@ -69,8 +69,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
     let sidebar_title_name = match state.sidebar_view {
         SidebarView::FileExplorer => SidebarView::FileExplorer.name().to_string(),
         SidebarView::ModifiedFiles => tab2_title,
-        SidebarView::CommitTimeline => SidebarView::CommitTimeline.name().to_string(),
-        SidebarView::TargetCandidates => SidebarView::TargetCandidates.name().to_string(),
+        SidebarView::CommitTimeline => timeline_title,
     };
 
     let sidebar_block = Block::default()
@@ -157,94 +156,95 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
         }
         SidebarView::CommitTimeline => {
-            let safe_sel = if state.commits.is_empty() {
-                0
+            if state.timeline_filter == crate::app::TimelineFilter::All {
+                let safe_sel = if state.commits.is_empty() {
+                    0
+                } else {
+                    state.commit_selected.min(state.commits.len() - 1)
+                };
+
+                let items: Vec<ListItem> = state
+                    .commits
+                    .iter()
+                    .enumerate()
+                    .map(|(i, commit)| {
+                        let is_candidate = state
+                            .candidate_commits
+                            .iter()
+                            .any(|cand| commit.matches_candidate(cand));
+
+                        let prefix = if is_candidate { "* " } else { "  " };
+                        let display_hash = if !commit.short_hash.is_empty() {
+                            &commit.short_hash
+                        } else if commit.hash.len() >= 7 {
+                            &commit.hash[..7]
+                        } else {
+                            &commit.hash
+                        };
+                        let text = format!("{}{} {}", prefix, display_hash, commit.message);
+
+                        let style = if i == safe_sel && is_sidebar_active {
+                            Style::default()
+                                .bg(Color::Blue)
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD)
+                        } else if i == safe_sel {
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD)
+                        } else if is_candidate {
+                            Style::default().fg(Color::Cyan)
+                        } else {
+                            Style::default().fg(Color::DarkGray)
+                        };
+                        ListItem::new(text).style(style)
+                    })
+                    .collect();
+                let list = List::new(items).block(sidebar_block);
+                let mut list_state = ListState::default();
+                if !state.commits.is_empty() {
+                    list_state.select(Some(safe_sel));
+                }
+                frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
             } else {
-                state.commit_selected.min(state.commits.len() - 1)
-            };
+                let safe_sel = if state.candidate_commits.is_empty() {
+                    0
+                } else {
+                    state
+                        .candidate_selected
+                        .min(state.candidate_commits.len() - 1)
+                };
 
-            let items: Vec<ListItem> = state
-                .commits
-                .iter()
-                .enumerate()
-                .map(|(i, commit)| {
-                    let is_candidate = state
-                        .candidate_commits
-                        .iter()
-                        .any(|cand| commit.matches_candidate(cand));
-
-                    let prefix = if is_candidate { "* " } else { "  " };
-                    let display_hash = if !commit.short_hash.is_empty() {
-                        &commit.short_hash
-                    } else if commit.hash.len() >= 7 {
-                        &commit.hash[..7]
-                    } else {
-                        &commit.hash
-                    };
-                    let text = format!("{}{} {}", prefix, display_hash, commit.message);
-
-                    let style = if i == safe_sel && is_sidebar_active {
-                        Style::default()
-                            .bg(Color::Blue)
-                            .fg(Color::White)
-                            .add_modifier(Modifier::BOLD)
-                    } else if i == safe_sel {
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD)
-                    } else if is_candidate {
-                        Style::default().fg(Color::Cyan)
-                    } else {
-                        Style::default().fg(Color::DarkGray)
-                    };
-                    ListItem::new(text).style(style)
-                })
-                .collect();
-            let list = List::new(items).block(sidebar_block);
-            let mut list_state = ListState::default();
-            if !state.commits.is_empty() {
-                list_state.select(Some(safe_sel));
+                let items: Vec<ListItem> = state
+                    .candidate_commits
+                    .iter()
+                    .enumerate()
+                    .map(|(i, commit)| {
+                        let display_hash = if !commit.short_hash.is_empty() {
+                            &commit.short_hash
+                        } else if commit.hash.len() >= 7 {
+                            &commit.hash[..7]
+                        } else {
+                            &commit.hash
+                        };
+                        let text = format!("* {} {}", display_hash, commit.message);
+                        let style = if i == safe_sel && is_sidebar_active {
+                            Style::default().bg(Color::Blue).fg(Color::White)
+                        } else if i == safe_sel {
+                            Style::default().fg(Color::Yellow)
+                        } else {
+                            Style::default().fg(Color::Cyan)
+                        };
+                        ListItem::new(text).style(style)
+                    })
+                    .collect();
+                let list = List::new(items).block(sidebar_block);
+                let mut list_state = ListState::default();
+                if !state.candidate_commits.is_empty() {
+                    list_state.select(Some(safe_sel));
+                }
+                frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
             }
-            frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
-        }
-        SidebarView::TargetCandidates => {
-            let safe_sel = if state.candidate_commits.is_empty() {
-                0
-            } else {
-                state
-                    .candidate_selected
-                    .min(state.candidate_commits.len() - 1)
-            };
-
-            let items: Vec<ListItem> = state
-                .candidate_commits
-                .iter()
-                .enumerate()
-                .map(|(i, commit)| {
-                    let display_hash = if !commit.short_hash.is_empty() {
-                        &commit.short_hash
-                    } else if commit.hash.len() >= 7 {
-                        &commit.hash[..7]
-                    } else {
-                        &commit.hash
-                    };
-                    let text = format!("{} {}", display_hash, commit.message);
-                    let style = if i == safe_sel && is_sidebar_active {
-                        Style::default().bg(Color::Blue).fg(Color::White)
-                    } else if i == safe_sel {
-                        Style::default().fg(Color::Yellow)
-                    } else {
-                        Style::default()
-                    };
-                    ListItem::new(text).style(style)
-                })
-                .collect();
-            let list = List::new(items).block(sidebar_block);
-            let mut list_state = ListState::default();
-            if !state.candidate_commits.is_empty() {
-                list_state.select(Some(safe_sel));
-            }
-            frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
         }
     }
 
@@ -460,7 +460,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     // 3. Footer Status Bar
     let status_text = format!(
-        " Status: {} | Keys: [?] Help | [S] Splash | [Tab] Switch Panel | [1/2/3/4] Sidebar View | [m] Nav Mode | [q] Quit",
+        " Status: {} | Keys: [?] Help | [S] Splash | [Tab] Switch Panel | [1/2/3] Sidebar View | [c] Filter | [m] Nav Mode | [q] Quit",
         state.status_message
     );
     let status_bar = Paragraph::new(status_text)
@@ -481,13 +481,16 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         let help_lines = vec![
             Line::from(vec![Span::styled(
                 "--- Global Shortcuts ---",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )]),
             Line::from("  ?               Toggle Keybindings Help Screen"),
             Line::from("  <Tab> / h / l   Switch Focus between Sidebar and Code Viewer"),
             Line::from(
-                "  1 / 2 / 3 / 4   Switch Sidebar View (1: Explorer, 2: Modified, 3: Timeline, 4: Candidates)",
+                "  1 / 2 / 3       Switch Sidebar View (1: Explorer, 2: Modified, 3: Timeline)",
             ),
+            Line::from("  c               Toggle Timeline Filter (ALL vs CANDIDATES)"),
             Line::from("  m               Cycle Navigation Mode (Commit, File, Function, Line)"),
             Line::from("  d               Toggle File Viewer Mode (FULL contents vs DIFF)"),
             Line::from("  M               Toggle Formatted Markdown View vs Raw Text"),
@@ -495,7 +498,9 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             Line::from(""),
             Line::from(vec![Span::styled(
                 "--- Sidebar Navigation ---",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )]),
             Line::from("  j / k / Down / Up   Move selection down / up"),
             Line::from("  <CR> / l            Select file / Toggle folder expansion"),
@@ -505,7 +510,9 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             Line::from(""),
             Line::from(vec![Span::styled(
                 "--- Code Viewer & Time Travel ---",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )]),
             Line::from("  j / k / Down / Up   Move line cursor down / up"),
             Line::from("  ] / [               Jump to Next / Previous historical commit"),

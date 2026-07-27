@@ -59,6 +59,7 @@ pub struct ScopeKeymapConfig {
     pub edit_here: Option<KeyBindingConfig>,
     pub toggle_markdown_format: Option<KeyBindingConfig>,
     pub toggle_file_view_mode: Option<KeyBindingConfig>,
+    pub toggle_timeline_filter: Option<KeyBindingConfig>,
     pub prompt_goto_line: Option<KeyBindingConfig>,
     pub prompt_search_text: Option<KeyBindingConfig>,
     pub prompt_search_symbol: Option<KeyBindingConfig>,

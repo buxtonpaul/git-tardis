@@ -23,7 +23,6 @@ pub enum SidebarView {
     FileExplorer,
     ModifiedFiles,
     CommitTimeline,
-    TargetCandidates,
 }
 
 impl SidebarView {
@@ -32,7 +31,6 @@ impl SidebarView {
             SidebarView::FileExplorer => "1: Explorer",
             SidebarView::ModifiedFiles => "2: Modified Files",
             SidebarView::CommitTimeline => "3: Commit Timeline",
-            SidebarView::TargetCandidates => "4: Candidates",
         }
     }
 
@@ -40,8 +38,7 @@ impl SidebarView {
         match self {
             SidebarView::FileExplorer => SidebarView::ModifiedFiles,
             SidebarView::ModifiedFiles => SidebarView::CommitTimeline,
-            SidebarView::CommitTimeline => SidebarView::TargetCandidates,
-            SidebarView::TargetCandidates => SidebarView::FileExplorer,
+            SidebarView::CommitTimeline => SidebarView::FileExplorer,
         }
     }
 }
@@ -80,6 +77,7 @@ pub struct AppState {
     pub repo: Option<GitRepo>,
     pub active_panel: ActivePanel,
     pub sidebar_view: SidebarView,
+    pub timeline_filter: TimelineFilter,
     pub nav_mode: NavigationMode,
     pub active_file: Option<String>,
 
@@ -150,6 +148,7 @@ impl AppState {
             git_version,
             active_panel: ActivePanel::Sidebar,
             sidebar_view: SidebarView::FileExplorer,
+            timeline_filter: TimelineFilter::All,
             nav_mode: NavigationMode::Commit,
             active_file: None,
 
@@ -285,11 +284,20 @@ impl AppState {
 
     pub fn set_sidebar_view(&mut self, view: SidebarView) {
         self.sidebar_view = view;
-        if view == SidebarView::TargetCandidates {
+        if view == SidebarView::CommitTimeline {
             self.update_candidate_commits();
         }
         self.load_currently_selected_file();
         self.status_message = format!("Sidebar view: {}", view.name());
+    }
+
+    pub fn toggle_timeline_filter(&mut self) {
+        self.timeline_filter = self.timeline_filter.toggle();
+        if self.timeline_filter == TimelineFilter::Candidates {
+            self.update_candidate_commits();
+        }
+        self.load_currently_selected_file();
+        self.status_message = format!("Timeline filter: {}", self.timeline_filter.name());
     }
 
     pub fn cycle_navigation_mode(&mut self) {
@@ -330,14 +338,14 @@ impl AppState {
                     }
                 }
                 SidebarView::CommitTimeline => {
-                    if !self.commits.is_empty() && self.commit_selected + 1 < self.commits.len() {
-                        self.commit_selected += 1;
-                        self.update_modified_files_for_selected_commit();
-                        self.load_currently_selected_file();
-                    }
-                }
-                SidebarView::TargetCandidates => {
-                    if !self.candidate_commits.is_empty()
+                    if self.timeline_filter == TimelineFilter::All {
+                        if !self.commits.is_empty() && self.commit_selected + 1 < self.commits.len()
+                        {
+                            self.commit_selected += 1;
+                            self.update_modified_files_for_selected_commit();
+                            self.load_currently_selected_file();
+                        }
+                    } else if !self.candidate_commits.is_empty()
                         && self.candidate_selected + 1 < self.candidate_commits.len()
                     {
                         self.candidate_selected += 1;
@@ -379,14 +387,13 @@ impl AppState {
                     }
                 }
                 SidebarView::CommitTimeline => {
-                    if self.commit_selected > 0 {
-                        self.commit_selected -= 1;
-                        self.update_modified_files_for_selected_commit();
-                        self.load_currently_selected_file();
-                    }
-                }
-                SidebarView::TargetCandidates => {
-                    if self.candidate_selected > 0 {
+                    if self.timeline_filter == TimelineFilter::All {
+                        if self.commit_selected > 0 {
+                            self.commit_selected -= 1;
+                            self.update_modified_files_for_selected_commit();
+                            self.load_currently_selected_file();
+                        }
+                    } else if self.candidate_selected > 0 {
                         self.candidate_selected -= 1;
                         let hash = self.candidate_commits[self.candidate_selected].hash.clone();
                         self.update_state_for_commit_hash(hash);
@@ -607,7 +614,7 @@ impl AppState {
                     self.active_file = Some(item.path.clone());
                 }
             }
-            SidebarView::CommitTimeline | SidebarView::TargetCandidates => {
+            SidebarView::CommitTimeline => {
                 if self.active_file.is_none() {
                     if let Some(item) = self.modified_files.get(self.modified_selected) {
                         self.active_file = Some(item.path.clone());
@@ -646,16 +653,19 @@ impl AppState {
                     Ok(diff_text) => {
                         let trimmed = diff_text.trim();
                         if trimmed.is_empty() {
-                            loaded_lines = Some(vec!["(No diff for working directory / file)".to_string()]);
+                            loaded_lines =
+                                Some(vec!["(No diff for working directory / file)".to_string()]);
                         } else {
                             loaded_lines = Some(diff_text.lines().map(|s| s.to_string()).collect());
                         }
                         if let Some(hash) = &target_commit {
                             let short_hash = &hash[..7.min(hash.len())];
                             if let Some(path) = &clean_path {
-                                self.status_message = format!("Loaded diff for {} at commit {}", path, short_hash);
+                                self.status_message =
+                                    format!("Loaded diff for {} at commit {}", path, short_hash);
                             } else {
-                                self.status_message = format!("Loaded diff for commit {}", short_hash);
+                                self.status_message =
+                                    format!("Loaded diff for commit {}", short_hash);
                             }
                         } else if let Some(path) = &clean_path {
                             self.status_message = format!("Loaded working diff for {}", path);
@@ -846,7 +856,7 @@ impl AppState {
                         .map(|item| item.path.clone())
                 }
             }
-            SidebarView::CommitTimeline | SidebarView::TargetCandidates => {
+            SidebarView::CommitTimeline => {
                 if let Some(item) = self.modified_files.get(self.modified_selected) {
                     Some(item.path.clone())
                 } else {
@@ -1185,6 +1195,9 @@ impl AppState {
             Action::ToggleFileViewMode => {
                 self.toggle_file_view_mode();
             }
+            Action::ToggleTimelineFilter => {
+                self.toggle_timeline_filter();
+            }
             Action::PromptGotoLine => {
                 self.input_prompt = Some(InputPrompt::GotoLine);
                 self.input_buffer.clear();
@@ -1209,7 +1222,12 @@ impl AppState {
                 1 => self.set_sidebar_view(SidebarView::FileExplorer),
                 2 => self.set_sidebar_view(SidebarView::ModifiedFiles),
                 3 => self.set_sidebar_view(SidebarView::CommitTimeline),
-                4 => self.set_sidebar_view(SidebarView::TargetCandidates),
+                4 => {
+                    self.set_sidebar_view(SidebarView::CommitTimeline);
+                    self.timeline_filter = TimelineFilter::Candidates;
+                    self.update_candidate_commits();
+                    self.load_currently_selected_file();
+                }
                 _ => {}
             },
             Action::CycleNavMode => self.cycle_navigation_mode(),
@@ -1239,7 +1257,13 @@ impl AppState {
                     self.load_currently_selected_file();
                 }
                 SidebarView::CommitTimeline => {
-                    if let Some(commit) = self.commits.get(self.commit_selected).cloned() {
+                    let selected_commit = if self.timeline_filter == TimelineFilter::All {
+                        self.commits.get(self.commit_selected).cloned()
+                    } else {
+                        self.candidate_commits.get(self.candidate_selected).cloned()
+                    };
+
+                    if let Some(commit) = selected_commit {
                         self.selected_commit_hash = Some(commit.hash.clone());
                         self.update_modified_files_for_selected_commit();
                         self.sidebar_view = SidebarView::ModifiedFiles;
@@ -1250,22 +1274,6 @@ impl AppState {
                         );
                     } else {
                         self.status_message = "No commit selected".to_string();
-                    }
-                }
-                SidebarView::TargetCandidates => {
-                    if let Some(commit) =
-                        self.candidate_commits.get(self.candidate_selected).cloned()
-                    {
-                        self.selected_commit_hash = Some(commit.hash.clone());
-                        self.update_modified_files_for_selected_commit();
-                        self.sidebar_view = SidebarView::ModifiedFiles;
-                        self.load_currently_selected_file();
-                        self.status_message = format!(
-                            "Viewing candidate commit {} ({})",
-                            commit.short_hash, commit.message
-                        );
-                    } else {
-                        self.status_message = "No candidate commit selected".to_string();
                     }
                 }
             },

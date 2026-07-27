@@ -187,7 +187,6 @@ pub enum SidebarView {
     FileExplorer,
     ModifiedFiles,
     CommitTimeline,
-    TargetCandidates,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,7 +271,7 @@ As defined in `time-travel.md`:
 3. **Explorer Pane & File Viewer Synchronization**:
    - **Target Candidates Tab**: Displays the list of candidate commits reachable based on the current navigation mode (`Commit`, `File`, `Function`, or `Line`). Moving the cursor up/down the list changes the target commit and immediately reloads the File Viewer Pane.
    - **Commit Timeline Candidate Highlighting**: In the full Commit Timeline view (`3: Commit Timeline`), candidate commits matching the active navigation mode are visually highlighted (with a `*` prefix indicator and distinct Cyan text color) to show candidate occurrences in full branch history.
-   - **Explorer -> Viewer**: Moving cursor up/down in the Explorer Pane (`SidebarView::CommitTimeline` or `SidebarView::TargetCandidates`) updates the target commit and immediately reloads the File Viewer Pane. If the current file did not exist at that commit, the viewer displays informative text stating the file did not exist at that commit.
+   - **Explorer -> Viewer**: Moving cursor up/down in the Explorer Pane (`SidebarView::CommitTimeline`) updates the target commit and immediately reloads the File Viewer Pane. If the current file did not exist at that commit, the viewer displays informative text stating the file did not exist at that commit.
    - **Viewer -> Explorer**: When target commit changes due to navigation key events in the File Viewer Pane (`]`, `[`), the Explorer Pane updates its selected commit index, candidate list, and modified files list accordingly.
 
 ---

@@ -154,6 +154,9 @@ pub enum Action {
     // File viewer mode action
     ToggleFileViewMode,
 
+    // Timeline filter mode action
+    ToggleTimelineFilter,
+
     // In-file navigation actions
     PromptGotoLine,
     PromptSearchText,
@@ -205,6 +208,7 @@ impl KeymapRegistry {
         self.bind(Scope::Global, "S", Action::ToggleSplashscreen);
         self.bind(Scope::Global, "M", Action::ToggleMarkdownFormat);
         self.bind(Scope::Global, "d", Action::ToggleFileViewMode);
+        self.bind(Scope::Global, "c", Action::ToggleTimelineFilter);
         self.bind(Scope::Global, "<Tab>", Action::ToggleFocus);
         self.bind(Scope::Global, "h", Action::ToggleFocus);
         self.bind(Scope::Global, "l", Action::ToggleFocus);
@@ -237,6 +241,7 @@ impl KeymapRegistry {
         self.bind(Scope::Sidebar, "<Left>", Action::CollapseFolder);
         self.bind(Scope::Sidebar, "h", Action::CollapseFolder);
         self.bind(Scope::Sidebar, " ", Action::ToggleFolder);
+        self.bind(Scope::Sidebar, "c", Action::ToggleTimelineFilter);
 
         // Code Viewer scope
         self.bind(Scope::CodeViewer, "j", Action::MoveDown);
@@ -417,6 +422,12 @@ impl KeymapRegistry {
             scope,
             &mappings.toggle_file_view_mode,
             Action::ToggleFileViewMode,
+        );
+        bind_list(
+            self,
+            scope,
+            &mappings.toggle_timeline_filter,
+            Action::ToggleTimelineFilter,
         );
         bind_list(
             self,
