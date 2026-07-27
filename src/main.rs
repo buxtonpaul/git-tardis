@@ -1,4 +1,4 @@
-use std::io::{stdout, IsTerminal};
+use std::io::{stdout, IsTerminal, Write};
 
 use crossterm::{
     event::{self, Event, KeyEventKind},
@@ -82,6 +82,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     disable_raw_mode()?;
     stdout().execute(LeaveAlternateScreen)?;
+
+    if let Some(msg) = &app.exit_message {
+        println!("{}", msg);
+        let _ = stdout().flush();
+    }
 
     Ok(())
 }

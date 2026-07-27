@@ -153,7 +153,7 @@ fn test_uncommitted_changes_exits_session_and_preserves_rebase() {
     let res = execute_edit_here(repo_path, &h2, input);
 
     // Git-tardis must exit with ConflictExited to preserve uncommitted work
-    assert_eq!(res, RebaseResult::ConflictExited);
+    assert!(matches!(res, RebaseResult::ConflictExited(_)));
     assert!(
         is_rebase_in_progress(repo_path),
         "Active rebase session must be preserved on exit"
@@ -278,7 +278,7 @@ fn test_execute_edit_here_conflict_and_exit_choice() {
     let input = Cursor::new("1\n");
     let res = execute_edit_here(repo_path, &h1, input);
 
-    assert_eq!(res, RebaseResult::ConflictExited);
+    assert!(matches!(res, RebaseResult::ConflictExited(_)));
     assert!(
         is_rebase_in_progress(repo_path),
         "Rebase should remain active for conflict resolution"

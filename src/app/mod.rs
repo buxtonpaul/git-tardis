@@ -107,6 +107,7 @@ pub struct AppState {
     pub scrolloff: usize,
 
     pub status_message: String,
+    pub exit_message: Option<String>,
     pub running: bool,
     pub show_help: bool,
     pub show_splashscreen: bool,
@@ -180,6 +181,7 @@ impl AppState {
             status_message:
                 "Press 'Tab' or 'h'/'l' to switch focus. '?' for help. 'm' for nav mode."
                     .to_string(),
+            exit_message: None,
             running: true,
             show_help: false,
             show_splashscreen: false,
@@ -683,7 +685,8 @@ impl AppState {
                 self.status_message = "Rebase aborted. Restored repository state.".to_string();
                 self.reload_repo_data();
             }
-            crate::rebase::RebaseResult::ConflictExited => {
+            crate::rebase::RebaseResult::ConflictExited(opt_msg) => {
+                self.exit_message = opt_msg.clone();
                 self.running = false;
             }
             crate::rebase::RebaseResult::Error(msg) => {

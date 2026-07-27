@@ -12,7 +12,7 @@ use std::process::Command;
 #[derive(Debug, PartialEq, Eq)]
 pub enum RebaseResult {
     Completed,
-    ConflictExited,
+    ConflictExited(Option<String>),
     Aborted,
     Error(String),
 }
@@ -281,19 +281,13 @@ pub fn execute_edit_here<R: BufRead>(
                 .unwrap_or(false);
 
             if has_uncommitted {
-                if is_tty {
-                    let _ = disable_raw_mode();
-                    let _ = execute!(stdout, LeaveAlternateScreen, Show);
-                }
-                println!("\n⚠️  Uncommitted changes detected in working directory!");
-                println!("Git-tardis exited to preserve your uncommitted changes in the active rebase session.");
-                println!("To complete the rebase manually:");
-                println!(
-                    "  1. Stage or commit your changes (`git commit --amend` or `git add <files>`)"
-                );
-                println!("  2. Run `git rebase --continue` (or `git rebase --abort`)");
-                let _ = io::stdout().flush();
-                return RebaseResult::ConflictExited;
+                let msg = "\n⚠️  Uncommitted changes detected in working directory!\n\
+                     Git-tardis exited to preserve your uncommitted changes in the active rebase session.\n\
+                     To complete the rebase manually:\n  \
+                     1. Stage or commit your changes (`git commit --amend` or `git add <files>`)\n  \
+                     2. Run `git rebase --continue` (or `git rebase --abort`)\n"
+                    .to_string();
+                return RebaseResult::ConflictExited(Some(msg));
             }
 
             println!("\nResuming rebase (`git rebase --continue`)...");
@@ -315,9 +309,10 @@ pub fn execute_edit_here<R: BufRead>(
                 let _ = input.read_line(&mut choice);
 
                 if choice.trim() == "1" {
-                    println!("\nGit-tardis exited. You are in an active rebase session.");
-                    println!("Fix conflicts with your editor, run `git add <files>`, and `git rebase --continue`.");
-                    return RebaseResult::ConflictExited;
+                    let msg = "\nGit-tardis exited. You are in an active rebase session.\n\
+                         Fix conflicts with your editor, run `git add <files>`, and `git rebase --continue`."
+                        .to_string();
+                    return RebaseResult::ConflictExited(Some(msg));
                 } else {
                     println!("\nAborting rebase and restoring pre-rebase state...");
                     let _ = Command::new("git")
@@ -345,8 +340,8 @@ pub fn execute_edit_here<R: BufRead>(
         let _ = input.read_line(&mut choice);
 
         if choice.trim() == "1" {
-            println!("\nGit-tardis exited. Active rebase session.");
-            return RebaseResult::ConflictExited;
+            let msg = "\nGit-tardis exited. Active rebase session.".to_string();
+            return RebaseResult::ConflictExited(Some(msg));
         } else {
             let _ = Command::new("git")
                 .current_dir(repo_path)
