@@ -83,6 +83,44 @@ pub fn is_rebase_in_progress(repo_path: &Path) -> bool {
         || repo_path.join(".git").join("rebase-apply").exists()
 }
 
+/// Prompt and handle startup protection if repository is launched while mid-rebase.
+/// Returns `Ok(true)` to proceed with launching Git-tardis, or `Ok(false)` to exit.
+pub fn check_and_handle_startup_rebase<R: BufRead>(
+    repo_path: &Path,
+    mut input: R,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    if is_rebase_in_progress(repo_path) {
+        println!("\n⚠️  A Git rebase is currently in progress in this repository.");
+        println!("Options:");
+        println!("  [1] Exit Git-tardis to finish or resolve rebase in your terminal");
+        println!("  [2] Abort active rebase (git rebase --abort) and launch Git-tardis");
+        print!("\nEnter choice [1/2]: ");
+        let _ = io::stdout().flush();
+
+        let mut choice = String::new();
+        let _ = input.read_line(&mut choice);
+
+        if choice.trim() == "2" {
+            println!("\nAborting active rebase and restoring repository...");
+            let status = Command::new("git")
+                .current_dir(repo_path)
+                .args(["rebase", "--abort"])
+                .status()?;
+            if !status.success() {
+                return Err("Failed to abort active rebase.".into());
+            }
+            println!("Active rebase aborted successfully. Launching Git-tardis...\n");
+            return Ok(true);
+        } else {
+            println!(
+                "\nGit-tardis exited. You can complete the rebase with `git rebase --continue` or abort with `git rebase --abort`."
+            );
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Locate the `git-tardis` binary for `GIT_SEQUENCE_EDITOR` invocations
 pub fn find_git_tardis_binary() -> Result<PathBuf, String> {
     if let Ok(override_path) = env::var("GIT_TARDIS_BIN_PATH") {
@@ -212,7 +250,7 @@ pub fn execute_edit_here<R: BufRead>(
 
         // After subshell exits, check if rebase is still in progress
         if rebase_merge_dir.exists() {
-            // Auto-stage and amend any uncommitted file changes made during the edit session
+            // Check for uncommitted working tree changes
             let has_uncommitted = Command::new("git")
                 .current_dir(repo_path)
                 .args(["status", "--porcelain"])
@@ -221,18 +259,14 @@ pub fn execute_edit_here<R: BufRead>(
                 .unwrap_or(false);
 
             if has_uncommitted {
+                println!("\n⚠️  Uncommitted changes detected in working directory!");
+                println!("Git-tardis exited to preserve your uncommitted changes in the active rebase session.");
+                println!("To complete the rebase manually:");
                 println!(
-                    "\nAuto-staging and amending changes into commit {}...",
-                    &target_hash[..7.min(target_hash.len())]
+                    "  1. Stage or commit your changes (`git commit --amend` or `git add <files>`)"
                 );
-                let _ = Command::new("git")
-                    .current_dir(repo_path)
-                    .args(["add", "-A"])
-                    .status();
-                let _ = Command::new("git")
-                    .current_dir(repo_path)
-                    .args(["commit", "--amend", "--no-edit"])
-                    .status();
+                println!("  2. Run `git rebase --continue` (or `git rebase --abort`)");
+                return RebaseResult::ConflictExited;
             }
 
             println!("\nResuming rebase (`git rebase --continue`)...");

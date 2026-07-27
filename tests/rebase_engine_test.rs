@@ -7,8 +7,8 @@ use tempfile::TempDir;
 static REBASE_TEST_MUTEX: Mutex<()> = Mutex::new(());
 
 use git_tardis::rebase::{
-    execute_edit_here, get_rebase_upstream, handle_sequence_editor_mark_edit,
-    is_rebase_in_progress, RebaseResult,
+    check_and_handle_startup_rebase, execute_edit_here, get_rebase_upstream,
+    handle_sequence_editor_mark_edit, is_rebase_in_progress, RebaseResult,
 };
 
 fn setup_test_repo() -> (TempDir, String, String, String) {
@@ -133,6 +133,93 @@ fn test_execute_edit_here_successful_rebase() {
     // Verify file_b.txt content after rebase completion
     let content_b = fs::read_to_string(repo_path.join("file_b.txt")).unwrap();
     assert_eq!(content_b, "Modified B during rebase\n");
+
+    std::env::remove_var("GIT_TARDIS_TEST_CMD");
+}
+
+#[test]
+fn test_uncommitted_changes_exits_session_and_preserves_rebase() {
+    let _lock = REBASE_TEST_MUTEX.lock().unwrap();
+    let (temp_dir, _h1, h2, _h3) = setup_test_repo();
+    let repo_path = temp_dir.path();
+
+    // Modify file_b.txt WITHOUT git add / git commit --amend
+    std::env::set_var(
+        "GIT_TARDIS_TEST_CMD",
+        "echo 'Uncommitted change in subshell' > file_b.txt",
+    );
+
+    let input = Cursor::new("1\n");
+    let res = execute_edit_here(repo_path, &h2, input);
+
+    // Git-tardis must exit with ConflictExited to preserve uncommitted work
+    assert_eq!(res, RebaseResult::ConflictExited);
+    assert!(
+        is_rebase_in_progress(repo_path),
+        "Active rebase session must be preserved on exit"
+    );
+
+    // Uncommitted file content should still be present in working directory
+    let content = fs::read_to_string(repo_path.join("file_b.txt")).unwrap();
+    assert_eq!(content, "Uncommitted change in subshell\n");
+
+    // Clean up
+    let _ = Command::new("git")
+        .current_dir(repo_path)
+        .args(["rebase", "--abort"])
+        .status();
+
+    std::env::remove_var("GIT_TARDIS_TEST_CMD");
+}
+
+#[test]
+fn test_startup_rebase_protection_choice_exit() {
+    let _lock = REBASE_TEST_MUTEX.lock().unwrap();
+    let (temp_dir, _h1, h2, _h3) = setup_test_repo();
+    let repo_path = temp_dir.path();
+
+    // Leave repo mid-rebase
+    std::env::set_var("GIT_TARDIS_TEST_CMD", "echo 'Uncommitted' > file_b.txt");
+    let _ = execute_edit_here(repo_path, &h2, Cursor::new("1\n"));
+    assert!(is_rebase_in_progress(repo_path));
+
+    // Test startup check with Choice [1] (Exit)
+    let input = Cursor::new("1\n");
+    let can_launch = check_and_handle_startup_rebase(repo_path, input).unwrap();
+    assert!(
+        !can_launch,
+        "Startup check should refuse to launch and return false"
+    );
+    assert!(is_rebase_in_progress(repo_path));
+
+    // Clean up
+    let _ = Command::new("git")
+        .current_dir(repo_path)
+        .args(["rebase", "--abort"])
+        .status();
+
+    std::env::remove_var("GIT_TARDIS_TEST_CMD");
+}
+
+#[test]
+fn test_startup_rebase_protection_choice_abort() {
+    let _lock = REBASE_TEST_MUTEX.lock().unwrap();
+    let (temp_dir, _h1, h2, _h3) = setup_test_repo();
+    let repo_path = temp_dir.path();
+
+    // Leave repo mid-rebase
+    std::env::set_var("GIT_TARDIS_TEST_CMD", "echo 'Uncommitted' > file_b.txt");
+    let _ = execute_edit_here(repo_path, &h2, Cursor::new("1\n"));
+    assert!(is_rebase_in_progress(repo_path));
+
+    // Test startup check with Choice [2] (Abort)
+    let input = Cursor::new("2\n");
+    let can_launch = check_and_handle_startup_rebase(repo_path, input).unwrap();
+    assert!(
+        can_launch,
+        "Startup check should abort rebase and allow launching"
+    );
+    assert!(!is_rebase_in_progress(repo_path));
 
     std::env::remove_var("GIT_TARDIS_TEST_CMD");
 }

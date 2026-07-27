@@ -30,6 +30,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    let stdin = std::io::stdin();
+    if !git_tardis::rebase::check_and_handle_startup_rebase(&args.path, stdin.lock())? {
+        return Ok(());
+    }
+
     let mut app = AppState::new(args.path);
     load_repo_data(&mut app);
 
