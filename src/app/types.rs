@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Active in-file navigation input prompt modal
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputPrompt {
+    GotoLine,
+    SearchText,
+    SearchSymbol,
+}
+
 /// Domain representation of a commit summary in navigation lists.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitSummary {

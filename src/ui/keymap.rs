@@ -151,6 +151,13 @@ pub enum Action {
     // Markdown rendering action
     ToggleMarkdownFormat,
 
+    // In-file navigation actions
+    PromptGotoLine,
+    PromptSearchText,
+    PromptSearchSymbol,
+    SearchNext,
+    SearchPrev,
+
     // Tree-based File Explorer actions
     ExpandFolder,
     CollapseFolder,
@@ -232,6 +239,13 @@ impl KeymapRegistry {
         self.bind(Scope::CodeViewer, "k", Action::MoveUp);
         self.bind(Scope::CodeViewer, "<Down>", Action::MoveDown);
         self.bind(Scope::CodeViewer, "<Up>", Action::MoveUp);
+
+        // In-file navigation shortcuts
+        self.bind(Scope::CodeViewer, ":", Action::PromptGotoLine);
+        self.bind(Scope::CodeViewer, "/", Action::PromptSearchText);
+        self.bind(Scope::CodeViewer, "s", Action::PromptSearchSymbol);
+        self.bind(Scope::CodeViewer, "n", Action::SearchNext);
+        self.bind(Scope::CodeViewer, "N", Action::SearchPrev);
 
         // Timeline navigation shortcuts
         self.bind(Scope::CodeViewer, "]", Action::JumpNextAuto);
@@ -394,6 +408,26 @@ impl KeymapRegistry {
             &mappings.toggle_markdown_format,
             Action::ToggleMarkdownFormat,
         );
+        bind_list(
+            self,
+            scope,
+            &mappings.prompt_goto_line,
+            Action::PromptGotoLine,
+        );
+        bind_list(
+            self,
+            scope,
+            &mappings.prompt_search_text,
+            Action::PromptSearchText,
+        );
+        bind_list(
+            self,
+            scope,
+            &mappings.prompt_search_symbol,
+            Action::PromptSearchSymbol,
+        );
+        bind_list(self, scope, &mappings.search_next, Action::SearchNext);
+        bind_list(self, scope, &mappings.search_prev, Action::SearchPrev);
     }
 }
 
