@@ -148,6 +148,9 @@ pub enum Action {
     InlineRewrite,
     EditHere,
 
+    // Markdown rendering action
+    ToggleMarkdownFormat,
+
     // Tree-based File Explorer actions
     ExpandFolder,
     CollapseFolder,
@@ -190,6 +193,7 @@ impl KeymapRegistry {
         self.bind(Scope::Global, "<Esc>", Action::Quit);
         self.bind(Scope::Global, "?", Action::ToggleHelp);
         self.bind(Scope::Global, "S", Action::ToggleSplashscreen);
+        self.bind(Scope::Global, "M", Action::ToggleMarkdownFormat);
         self.bind(Scope::Global, "<Tab>", Action::ToggleFocus);
         self.bind(Scope::Global, "h", Action::ToggleFocus);
         self.bind(Scope::Global, "l", Action::ToggleFocus);
@@ -384,6 +388,12 @@ impl KeymapRegistry {
         bind_list(self, scope, &mappings.jump_prev_line, Action::JumpPrevLine);
         bind_list(self, scope, &mappings.inline_rewrite, Action::InlineRewrite);
         bind_list(self, scope, &mappings.edit_here, Action::EditHere);
+        bind_list(
+            self,
+            scope,
+            &mappings.toggle_markdown_format,
+            Action::ToggleMarkdownFormat,
+        );
     }
 }
 
