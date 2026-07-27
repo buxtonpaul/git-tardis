@@ -109,6 +109,7 @@ pub struct AppState {
     pub status_message: String,
     pub exit_message: Option<String>,
     pub running: bool,
+    pub in_alternate_screen: bool,
     pub show_help: bool,
     pub show_splashscreen: bool,
     pub git_version: Option<String>,
@@ -183,6 +184,7 @@ impl AppState {
                     .to_string(),
             exit_message: None,
             running: true,
+            in_alternate_screen: false,
             show_help: false,
             show_splashscreen: false,
 
@@ -677,15 +679,18 @@ impl AppState {
 
         match &result {
             crate::rebase::RebaseResult::Completed => {
+                self.in_alternate_screen = true;
                 let short_hash = &target_hash[..7.min(target_hash.len())];
                 self.status_message = format!("Successfully edited commit {}", short_hash);
                 self.reload_repo_data();
             }
             crate::rebase::RebaseResult::Aborted => {
+                self.in_alternate_screen = true;
                 self.status_message = "Rebase aborted. Restored repository state.".to_string();
                 self.reload_repo_data();
             }
             crate::rebase::RebaseResult::ConflictExited(opt_msg) => {
+                self.in_alternate_screen = false;
                 self.exit_message = opt_msg.clone();
                 self.running = false;
             }
@@ -1725,6 +1730,20 @@ mod tests {
         assert_eq!(app.sidebar_view, SidebarView::FileExplorer);
         assert_eq!(app.nav_mode, NavigationMode::Commit);
         assert!(app.running);
+        assert!(!app.in_alternate_screen);
+    }
+
+    #[test]
+    fn test_in_alternate_screen_state_tracking() {
+        let mut app = AppState::new(PathBuf::from("/test/repo"));
+        assert!(!app.in_alternate_screen);
+
+        app.in_alternate_screen = true;
+        assert!(app.in_alternate_screen);
+
+        app.exit_message = Some("Conflict exited".to_string());
+        app.in_alternate_screen = false;
+        assert!(!app.in_alternate_screen);
     }
 
     #[test]

@@ -54,6 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Interactive TUI Execution
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
+    app.in_alternate_screen = true;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
     while app.running {
@@ -81,7 +82,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     disable_raw_mode()?;
-    stdout().execute(LeaveAlternateScreen)?;
+    if app.in_alternate_screen {
+        stdout().execute(LeaveAlternateScreen)?;
+        app.in_alternate_screen = false;
+    }
 
     if let Some(msg) = &app.exit_message {
         println!("{}", msg);
