@@ -69,13 +69,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if event::poll(std::time::Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    if let Some(action) = dispatcher.handle_event(key, app.active_scope()) {
+                    if app.input_prompt.is_some() {
+                        app.handle_input_key(key);
+                    } else if let Some(action) = dispatcher.handle_event(key, app.active_scope()) {
                         app.dispatch_action(action);
                     }
                 }
             }
-        } else if let Some(action) = dispatcher.check_timeout(app.active_scope()) {
-            app.dispatch_action(action);
+        } else if app.input_prompt.is_none() {
+            if let Some(action) = dispatcher.check_timeout(app.active_scope()) {
+                app.dispatch_action(action);
+            }
         }
     }
 

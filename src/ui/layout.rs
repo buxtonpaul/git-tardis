@@ -503,6 +503,10 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             Line::from("  <C-f> / <C-b>       Page scroll down / up"),
             Line::from("  <C-e> / <C-y>       Scroll single line down / up"),
             Line::from("  zz / zt / zb        Center cursor / Cursor top / Cursor bottom"),
+            Line::from("  :                   Go to Line Number"),
+            Line::from("  /                   Search Text Pattern in File"),
+            Line::from("  s                   Search Symbol (Tree-sitter AST locator)"),
+            Line::from("  n / N               Jump to Next / Previous search match"),
             Line::from("  e / E               Trigger Inline Rewrite / Edit Here"),
             Line::from(""),
             Line::from(vec![Span::styled(
@@ -531,6 +535,85 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             crate::ui::splash::render_splashscreen_lines(state.git_version.as_deref());
         let splash_paragraph = Paragraph::new(splash_lines).block(splash_block);
         frame.render_widget(splash_paragraph, area);
+    }
+
+    // 6. Navigation Input Prompt Overlay Modal
+    if let Some(prompt) = &state.input_prompt {
+        let area = centered_rect(65, 45, frame.area());
+        frame.render_widget(Clear, area);
+
+        let (title, prefix) = match prompt {
+            crate::app::InputPrompt::GotoLine => (" Go to Line ", ": "),
+            crate::app::InputPrompt::SearchText => (" Search Text ", "/ "),
+            crate::app::InputPrompt::SearchSymbol => (" Search Symbol (Tree-sitter) ", "Symbol: "),
+        };
+
+        let prompt_block = Block::default()
+            .borders(Borders::ALL)
+            .title(title)
+            .border_style(Style::default().fg(Color::Yellow));
+
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled(
+                    prefix,
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(&state.input_buffer, Style::default().fg(Color::Yellow)),
+                Span::styled("█", Style::default().fg(Color::Green)),
+            ]),
+            Line::from(""),
+        ];
+
+        if *prompt == crate::app::InputPrompt::SearchSymbol {
+            let filtered = state.filtered_symbols(&state.input_buffer);
+            if filtered.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "  No matching symbols",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                )));
+            } else {
+                for (idx, item) in filtered.iter().take(10).enumerate() {
+                    let is_sel = idx == state.symbol_selected;
+                    let style = if is_sel {
+                        Style::default()
+                            .bg(Color::DarkGray)
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+                    lines.push(Line::from(vec![Span::styled(
+                        format!(
+                            "  {:>6}  line {:<4}  {}",
+                            item.kind, item.line_number, item.name
+                        ),
+                        style,
+                    )]));
+                }
+            }
+        } else if *prompt == crate::app::InputPrompt::SearchText && !state.search_matches.is_empty()
+        {
+            lines.push(Line::from(Span::styled(
+                format!("  {} line matches found", state.search_matches.len()),
+                Style::default().fg(Color::Green),
+            )));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Press <Enter> to Jump | <Esc> to Cancel",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )));
+
+        let prompt_paragraph = Paragraph::new(lines).block(prompt_block);
+        frame.render_widget(prompt_paragraph, area);
     }
 }
 

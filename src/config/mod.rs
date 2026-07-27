@@ -58,6 +58,11 @@ pub struct ScopeKeymapConfig {
     pub inline_rewrite: Option<KeyBindingConfig>,
     pub edit_here: Option<KeyBindingConfig>,
     pub toggle_markdown_format: Option<KeyBindingConfig>,
+    pub prompt_goto_line: Option<KeyBindingConfig>,
+    pub prompt_search_text: Option<KeyBindingConfig>,
+    pub prompt_search_symbol: Option<KeyBindingConfig>,
+    pub search_next: Option<KeyBindingConfig>,
+    pub search_prev: Option<KeyBindingConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]

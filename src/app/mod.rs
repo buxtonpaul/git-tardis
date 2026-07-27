@@ -122,6 +122,14 @@ pub struct AppState {
     pub last_loaded_file: Option<String>,
     pub last_loaded_commit: Option<String>,
     pub render_markdown_formatted: bool,
+
+    pub input_prompt: Option<InputPrompt>,
+    pub input_buffer: String,
+    pub last_search_query: Option<String>,
+    pub search_matches: Vec<usize>,
+    pub search_match_index: usize,
+    pub symbol_matches: Vec<crate::treesitter::SymbolItem>,
+    pub symbol_selected: usize,
 }
 
 impl AppState {
@@ -183,6 +191,14 @@ impl AppState {
             last_loaded_file: None,
             last_loaded_commit: None,
             render_markdown_formatted: true,
+
+            input_prompt: None,
+            input_buffer: String::new(),
+            last_search_query: None,
+            search_matches: Vec::new(),
+            search_match_index: 0,
+            symbol_matches: Vec::new(),
+            symbol_selected: 0,
         }
     }
 
@@ -1090,6 +1106,25 @@ impl AppState {
                     }
                 );
             }
+            Action::PromptGotoLine => {
+                self.input_prompt = Some(InputPrompt::GotoLine);
+                self.input_buffer.clear();
+                self.status_message = "Go to line:".to_string();
+            }
+            Action::PromptSearchText => {
+                self.input_prompt = Some(InputPrompt::SearchText);
+                self.input_buffer.clear();
+                self.status_message = "Search text:".to_string();
+            }
+            Action::PromptSearchSymbol => {
+                self.open_symbol_prompt();
+            }
+            Action::SearchNext => {
+                self.search_next();
+            }
+            Action::SearchPrev => {
+                self.search_prev();
+            }
             Action::ToggleFocus => self.toggle_panel_focus(),
             Action::SetSidebarView(index) => match index {
                 1 => self.set_sidebar_view(SidebarView::FileExplorer),
@@ -1266,6 +1301,210 @@ impl AppState {
                             self.load_currently_selected_file();
                         }
                     }
+                }
+            }
+        }
+    }
+
+    pub fn goto_line(&mut self, line: usize) {
+        if self.code_lines.is_empty() {
+            return;
+        }
+        let target = line.clamp(1, self.code_lines.len());
+        self.cursor_line = target;
+        if self.code_viewport_height > 0 {
+            self.ensure_cursor_visible(self.code_viewport_height);
+        }
+        self.update_current_line_blame();
+        self.update_candidate_commits();
+        self.status_message = format!("Jumped to line {}", target);
+    }
+
+    pub fn search_text(&mut self, query: &str) {
+        if query.is_empty() || self.code_lines.is_empty() {
+            return;
+        }
+        self.last_search_query = Some(query.to_string());
+        self.search_matches.clear();
+        let lower_query = query.to_lowercase();
+
+        for (idx, line) in self.code_lines.iter().enumerate() {
+            if line.to_lowercase().contains(&lower_query) {
+                self.search_matches.push(idx + 1);
+            }
+        }
+
+        if self.search_matches.is_empty() {
+            self.status_message = format!("Pattern not found: '{}'", query);
+            return;
+        }
+
+        if let Some(pos) = self
+            .search_matches
+            .iter()
+            .position(|&l| l >= self.cursor_line)
+        {
+            self.search_match_index = pos;
+        } else {
+            self.search_match_index = 0;
+        }
+
+        let target_line = self.search_matches[self.search_match_index];
+        self.goto_line(target_line);
+        self.status_message = format!(
+            "Search match {}/{} for '{}' on line {}",
+            self.search_match_index + 1,
+            self.search_matches.len(),
+            query,
+            target_line
+        );
+    }
+
+    pub fn search_next(&mut self) {
+        if self.search_matches.is_empty() {
+            if let Some(query) = self.last_search_query.clone() {
+                self.search_text(&query);
+            } else {
+                self.status_message = "No active search query".to_string();
+            }
+            return;
+        }
+
+        self.search_match_index = (self.search_match_index + 1) % self.search_matches.len();
+        let target_line = self.search_matches[self.search_match_index];
+        self.goto_line(target_line);
+        if let Some(query) = &self.last_search_query {
+            self.status_message = format!(
+                "Search match {}/{} for '{}' on line {}",
+                self.search_match_index + 1,
+                self.search_matches.len(),
+                query,
+                target_line
+            );
+        }
+    }
+
+    pub fn search_prev(&mut self) {
+        if self.search_matches.is_empty() {
+            if let Some(query) = self.last_search_query.clone() {
+                self.search_text(&query);
+            } else {
+                self.status_message = "No active search query".to_string();
+            }
+            return;
+        }
+
+        if self.search_match_index == 0 {
+            self.search_match_index = self.search_matches.len() - 1;
+        } else {
+            self.search_match_index -= 1;
+        }
+
+        let target_line = self.search_matches[self.search_match_index];
+        self.goto_line(target_line);
+        if let Some(query) = &self.last_search_query {
+            self.status_message = format!(
+                "Search match {}/{} for '{}' on line {}",
+                self.search_match_index + 1,
+                self.search_matches.len(),
+                query,
+                target_line
+            );
+        }
+    }
+
+    pub fn open_symbol_prompt(&mut self) {
+        let source_code = self.code_lines.join("\n");
+        let file_path = self.current_file_path().unwrap_or_default();
+        self.symbol_matches =
+            crate::treesitter::extract_symbols(&self.grammar_registry, &file_path, &source_code);
+        self.symbol_selected = 0;
+        self.input_buffer.clear();
+        self.input_prompt = Some(InputPrompt::SearchSymbol);
+        self.status_message = format!(
+            "Search symbol ({} symbols found):",
+            self.symbol_matches.len()
+        );
+    }
+
+    pub fn filtered_symbols(&self, filter: &str) -> Vec<crate::treesitter::SymbolItem> {
+        if filter.is_empty() {
+            self.symbol_matches.clone()
+        } else {
+            let lower = filter.to_lowercase();
+            self.symbol_matches
+                .iter()
+                .filter(|s| s.name.to_lowercase().contains(&lower))
+                .cloned()
+                .collect()
+        }
+    }
+
+    pub fn handle_input_key(&mut self, key: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Esc => {
+                self.input_prompt = None;
+                self.input_buffer.clear();
+                self.status_message = "Cancelled prompt.".to_string();
+            }
+            KeyCode::Enter => {
+                self.submit_input_prompt();
+            }
+            KeyCode::Backspace => {
+                self.input_buffer.pop();
+            }
+            KeyCode::Up => {
+                if self.input_prompt == Some(InputPrompt::SearchSymbol) && self.symbol_selected > 0
+                {
+                    self.symbol_selected -= 1;
+                }
+            }
+            KeyCode::Down => {
+                if self.input_prompt == Some(InputPrompt::SearchSymbol) {
+                    let filtered = self.filtered_symbols(&self.input_buffer.clone());
+                    if !filtered.is_empty() && self.symbol_selected + 1 < filtered.len() {
+                        self.symbol_selected += 1;
+                    }
+                }
+            }
+            KeyCode::Char(c) => {
+                self.input_buffer.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn submit_input_prompt(&mut self) {
+        let prompt = match self.input_prompt.take() {
+            Some(p) => p,
+            None => return,
+        };
+        let input = self.input_buffer.trim().to_string();
+        self.input_buffer.clear();
+
+        match prompt {
+            InputPrompt::GotoLine => {
+                if let Ok(line_num) = input.parse::<usize>() {
+                    self.goto_line(line_num);
+                } else {
+                    self.status_message = format!("Invalid line number: '{}'", input);
+                }
+            }
+            InputPrompt::SearchText => {
+                self.search_text(&input);
+            }
+            InputPrompt::SearchSymbol => {
+                let filtered = self.filtered_symbols(&input);
+                if let Some(item) = filtered.get(self.symbol_selected) {
+                    let line = item.line_number;
+                    self.goto_line(line);
+                } else if !filtered.is_empty() {
+                    let line = filtered[0].line_number;
+                    self.goto_line(line);
+                } else {
+                    self.status_message = format!("No matching symbol for '{}'", input);
                 }
             }
         }
