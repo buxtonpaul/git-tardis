@@ -71,9 +71,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             terminal.clear()?;
                         }
                     }
-                            terminal.clear()?;
-                        }
-                    }
                 }
             }
         } else if app.input_prompt.is_none() {
