@@ -646,23 +646,23 @@ impl AppState {
     }
 
     pub fn trigger_edit_here(&mut self) -> crate::rebase::RebaseResult {
-        let target_hash = match self.selected_commit_hash.clone().or_else(|| {
-            if self.sidebar_view == SidebarView::CommitTimeline {
-                if self.timeline_filter == TimelineFilter::All {
-                    self.commits
-                        .get(self.commit_selected)
-                        .map(|c| c.hash.clone())
-                } else {
-                    self.candidate_commits
-                        .get(self.candidate_selected)
-                        .map(|c| c.hash.clone())
-                }
-            } else {
+        let target_hash = match if self.sidebar_view == SidebarView::CommitTimeline {
+            if self.timeline_filter == TimelineFilter::All {
                 self.commits
                     .get(self.commit_selected)
                     .map(|c| c.hash.clone())
+            } else {
+                self.candidate_commits
+                    .get(self.candidate_selected)
+                    .map(|c| c.hash.clone())
             }
-        }) {
+        } else {
+            self.selected_commit_hash.clone().or_else(|| {
+                self.commits
+                    .get(self.commit_selected)
+                    .map(|c| c.hash.clone())
+            })
+        } {
             Some(h) => h,
             None => {
                 self.status_message = "No commit selected for Edit Here".to_string();

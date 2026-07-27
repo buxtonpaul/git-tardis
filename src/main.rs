@@ -60,7 +60,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if app.input_prompt.is_some() {
                         app.handle_input_key(key);
                     } else if let Some(action) = dispatcher.handle_event(key, app.active_scope()) {
+                        let is_edit_here = action == git_tardis::ui::Action::EditHere;
                         app.dispatch_action(action);
+                        if is_edit_here {
+                            terminal.clear()?;
+                        }
                     }
                 }
             }
