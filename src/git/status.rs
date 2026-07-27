@@ -45,9 +45,9 @@ impl GitRepo {
         Ok(files)
     }
 
-    /// Query repository status (`git status --porcelain=v1 -z`).
+    /// Query repository status (`git status --porcelain=v1 -z -uall`).
     pub fn get_status(&self) -> Result<Vec<FileStatus>, GitError> {
-        let bytes = self.run_git_bytes(&["status", "--porcelain=v1", "-z"])?;
+        let bytes = self.run_git_bytes(&["status", "--porcelain=v1", "-z", "-uall"])?;
 
         let mut statuses = Vec::new();
         let mut slices = bytes.split(|&b| b == 0).peekable();

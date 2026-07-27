@@ -259,12 +259,17 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
     let title_text = if let Some(blame) = &state.current_line_blame {
         let blame_str = crate::git::format_blame_annotation(blame);
         format!(
-            " Code Viewer - Mode: [{}] | Blame: {} ",
+            " Code Viewer - Mode: [{}] | View: [{}] | Blame: {} ",
             state.nav_mode.name(),
+            state.file_view_mode.name(),
             blame_str
         )
     } else {
-        format!(" Code Viewer - Mode: [{}] ", state.nav_mode.name())
+        format!(
+            " Code Viewer - Mode: [{}] | View: [{}] ",
+            state.nav_mode.name(),
+            state.file_view_mode.name()
+        )
     };
 
     let code_block = Block::default()
@@ -303,11 +308,15 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             let line_num = idx + 1;
             let is_cursor = line_num == state.cursor_line;
 
-            let line_diff_type = state
-                .file_diff_highlights
-                .get(&line_num)
-                .copied()
-                .unwrap_or_else(|| crate::git::diff_parser::classify_diff_line(line));
+            let line_diff_type = if state.file_view_mode == crate::app::FileViewMode::Diff {
+                crate::git::diff_parser::classify_diff_line(line)
+            } else {
+                state
+                    .file_diff_highlights
+                    .get(&line_num)
+                    .copied()
+                    .unwrap_or(crate::git::DiffLineType::Context)
+            };
 
             let (diff_prefix, diff_color) = match line_diff_type {
                 crate::git::DiffLineType::Added => ("+ ", Some(Color::Green)),
@@ -461,7 +470,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     // 4. Keybindings Help Overlay Popup
     if state.show_help {
-        let area = centered_rect(80, 88, frame.area());
+        let area = centered_rect(85, 95, frame.area());
         frame.render_widget(Clear, area);
 
         let help_block = Block::default()
@@ -480,6 +489,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 "  1 / 2 / 3 / 4   Switch Sidebar View (1: Explorer, 2: Modified, 3: Timeline, 4: Candidates)",
             ),
             Line::from("  m               Cycle Navigation Mode (Commit, File, Function, Line)"),
+            Line::from("  d               Toggle File Viewer Mode (FULL contents vs DIFF)"),
             Line::from("  M               Toggle Formatted Markdown View vs Raw Text"),
             Line::from("  q / <Esc>       Close Help / Reset Time Travel / Exit Application"),
             Line::from(""),
