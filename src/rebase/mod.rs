@@ -79,6 +79,25 @@ pub fn get_rebase_upstream(dir: &Path, commit_hash: &str) -> Result<String, Stri
 
 /// Check if a rebase is currently in progress in the repository
 pub fn is_rebase_in_progress(repo_path: &Path) -> bool {
+    let git_dir_res = Command::new("git")
+        .current_dir(repo_path)
+        .args(["rev-parse", "--git-dir"])
+        .output();
+
+    if let Ok(out) = git_dir_res {
+        if out.status.success() {
+            let git_dir_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let git_dir = if Path::new(&git_dir_str).is_absolute() {
+                PathBuf::from(&git_dir_str)
+            } else {
+                repo_path.join(&git_dir_str)
+            };
+            if git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists() {
+                return true;
+            }
+        }
+    }
+
     repo_path.join(".git").join("rebase-merge").exists()
         || repo_path.join(".git").join("rebase-apply").exists()
 }
@@ -259,6 +278,10 @@ pub fn execute_edit_here<R: BufRead>(
                 .unwrap_or(false);
 
             if has_uncommitted {
+                if is_tty {
+                    let _ = disable_raw_mode();
+                    let _ = execute!(stdout, LeaveAlternateScreen, Show);
+                }
                 println!("\n⚠️  Uncommitted changes detected in working directory!");
                 println!("Git-tardis exited to preserve your uncommitted changes in the active rebase session.");
                 println!("To complete the rebase manually:");
@@ -266,6 +289,7 @@ pub fn execute_edit_here<R: BufRead>(
                     "  1. Stage or commit your changes (`git commit --amend` or `git add <files>`)"
                 );
                 println!("  2. Run `git rebase --continue` (or `git rebase --abort`)");
+                let _ = io::stdout().flush();
                 return RebaseResult::ConflictExited;
             }
 
