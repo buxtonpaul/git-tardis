@@ -1,33 +1,18 @@
-use std::io::{stdout, IsTerminal};
+use std::io::{stdout, IsTerminal, Write};
 
 use crossterm::{
     event::{self, Event, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
-use git_tardis::app::{AppState, CommitSummary, ModifiedFileEntry};
+use git_tardis::app::AppState;
 use git_tardis::cli::CliArgs;
 use git_tardis::config::Config;
 use git_tardis::ui::{render, KeyDispatcher, KeymapRegistry};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 fn load_repo_data(app: &mut AppState) {
-    if let Some(repo) = app.repo() {
-        if let Ok(files) = repo.list_files() {
-            app.files = files;
-            app.expand_all_folders();
-        }
-        if let Ok(statuses) = repo.get_status() {
-            let items: Vec<ModifiedFileEntry> =
-                statuses.into_iter().map(ModifiedFileEntry::from).collect();
-            app.uncommitted_files = items.clone();
-            app.dirty_files = items;
-        }
-        if let Ok(commits) = repo.get_commit_history(Some(50)) {
-            app.commits = commits.into_iter().map(CommitSummary::from).collect();
-        }
-        app.load_currently_selected_file();
-    }
+    app.reload_repo_data();
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,10 +20,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load_or_default(args.config.as_deref());
 
     if let Some(target_hash) = args.mark_edit {
-        println!(
-            "Git-tardis sequence editor mode: marking commit '{}' for edit",
-            target_hash
-        );
+        let todo_path = args.path;
+        if let Err(e) =
+            git_tardis::rebase::handle_sequence_editor_mark_edit(&target_hash, &todo_path)
+        {
+            eprintln!("Sequence editor error: {}", e);
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    let stdin = std::io::stdin();
+    if !git_tardis::rebase::check_and_handle_startup_rebase(&args.path, stdin.lock())? {
         return Ok(());
     }
 
@@ -72,7 +65,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if app.input_prompt.is_some() {
                         app.handle_input_key(key);
                     } else if let Some(action) = dispatcher.handle_event(key, app.active_scope()) {
+                        let is_edit_here = action == git_tardis::ui::Action::EditHere;
                         app.dispatch_action(action);
+                        if is_edit_here && app.running {
+                            terminal.clear()?;
+                        }
+                    }
+                            terminal.clear()?;
+                        }
                     }
                 }
             }
@@ -85,6 +85,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     disable_raw_mode()?;
     stdout().execute(LeaveAlternateScreen)?;
+
+    if let Some(msg) = &app.exit_message {
+        println!("{}", msg);
+        let _ = stdout().flush();
+    }
 
     Ok(())
 }

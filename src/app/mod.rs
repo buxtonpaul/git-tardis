@@ -107,6 +107,7 @@ pub struct AppState {
     pub scrolloff: usize,
 
     pub status_message: String,
+    pub exit_message: Option<String>,
     pub running: bool,
     pub show_help: bool,
     pub show_splashscreen: bool,
@@ -180,6 +181,7 @@ impl AppState {
             status_message:
                 "Press 'Tab' or 'h'/'l' to switch focus. '?' for help. 'm' for nav mode."
                     .to_string(),
+            exit_message: None,
             running: true,
             show_help: false,
             show_splashscreen: false,
@@ -624,6 +626,75 @@ impl AppState {
 
     pub fn clear_blame_cache(&mut self) {
         self.blame_cache.clear();
+    }
+
+    pub fn reload_repo_data(&mut self) {
+        if let Some(repo) = self.repo() {
+            if let Ok(files) = repo.list_files() {
+                self.files = files;
+                self.expand_all_folders();
+            }
+            if let Ok(statuses) = repo.get_status() {
+                let items: Vec<ModifiedFileEntry> =
+                    statuses.into_iter().map(ModifiedFileEntry::from).collect();
+                self.uncommitted_files = items.clone();
+                self.dirty_files = items;
+            }
+            if let Ok(commits) = repo.get_commit_history(Some(50)) {
+                self.commits = commits.into_iter().map(CommitSummary::from).collect();
+            }
+            self.load_currently_selected_file();
+        }
+    }
+
+    pub fn trigger_edit_here(&mut self) -> crate::rebase::RebaseResult {
+        let target_hash = match if self.sidebar_view == SidebarView::CommitTimeline {
+            if self.timeline_filter == TimelineFilter::All {
+                self.commits
+                    .get(self.commit_selected)
+                    .map(|c| c.hash.clone())
+            } else {
+                self.candidate_commits
+                    .get(self.candidate_selected)
+                    .map(|c| c.hash.clone())
+            }
+        } else {
+            self.selected_commit_hash.clone().or_else(|| {
+                self.commits
+                    .get(self.commit_selected)
+                    .map(|c| c.hash.clone())
+            })
+        } {
+            Some(h) => h,
+            None => {
+                self.status_message = "No commit selected for Edit Here".to_string();
+                return crate::rebase::RebaseResult::Error("No commit selected".to_string());
+            }
+        };
+
+        let stdin = std::io::stdin();
+        let result = crate::rebase::execute_edit_here(&self.repo_path, &target_hash, stdin.lock());
+
+        match &result {
+            crate::rebase::RebaseResult::Completed => {
+                let short_hash = &target_hash[..7.min(target_hash.len())];
+                self.status_message = format!("Successfully edited commit {}", short_hash);
+                self.reload_repo_data();
+            }
+            crate::rebase::RebaseResult::Aborted => {
+                self.status_message = "Rebase aborted. Restored repository state.".to_string();
+                self.reload_repo_data();
+            }
+            crate::rebase::RebaseResult::ConflictExited(opt_msg) => {
+                self.exit_message = opt_msg.clone();
+                self.running = false;
+            }
+            crate::rebase::RebaseResult::Error(msg) => {
+                self.status_message = format!("Edit Here error: {}", msg);
+            }
+        }
+
+        result
     }
 
     pub fn load_currently_selected_file(&mut self) {
@@ -1391,7 +1462,252 @@ impl AppState {
                 self.status_message = "Triggered Inline Rewrite".to_string();
             }
             Action::EditHere => {
-                self.status_message = "Triggered Edit Here".to_string();
+                self.trigger_edit_here();
+            }
+            Action::ExpandFolder => {
+                if self.sidebar_view == SidebarView::FileExplorer {
+                    let items = self.visible_file_items();
+                    if let Some(item) = items.get(self.file_selected).cloned() {
+                        if item.is_dir {
+                            if !item.is_expanded {
+                                self.expand_folder(&item.path);
+                            } else if self.file_selected + 1 < items.len() {
+                                self.file_selected += 1;
+                                self.load_currently_selected_file();
+                            }
+                        } else {
+                            self.load_currently_selected_file();
+                        }
+                    }
+                }
+            }
+            Action::CollapseFolder => {
+                if self.sidebar_view == SidebarView::FileExplorer {
+                    let items = self.visible_file_items();
+                    if let Some(item) = items.get(self.file_selected).cloned() {
+                        if item.is_dir && item.is_expanded {
+                            self.collapse_folder(&item.path);
+                        } else {
+                            self.move_to_parent_folder();
+                        }
+                    }
+                }
+            }
+            Action::ToggleFolder => {
+                if self.sidebar_view == SidebarView::FileExplorer {
+                    let items = self.visible_file_items();
+                    if let Some(item) = items.get(self.file_selected).cloned() {
+                        if item.is_dir {
+                            self.toggle_folder(&item.path);
+                        } else {
+                            self.load_currently_selected_file();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn goto_line(&mut self, line: usize) {
+        if self.code_lines.is_empty() {
+            return;
+        }
+        let target = line.clamp(1, self.code_lines.len());
+        self.cursor_line = target;
+        if self.code_viewport_height > 0 {
+            self.ensure_cursor_visible(self.code_viewport_height);
+        }
+        self.update_current_line_blame();
+        self.update_candidate_commits();
+        self.status_message = format!("Jumped to line {}", target);
+    }
+
+    pub fn search_text(&mut self, query: &str) {
+        if query.is_empty() || self.code_lines.is_empty() {
+            return;
+        }
+        self.last_search_query = Some(query.to_string());
+        self.search_matches.clear();
+        let lower_query = query.to_lowercase();
+
+        for (idx, line) in self.code_lines.iter().enumerate() {
+            if line.to_lowercase().contains(&lower_query) {
+                self.search_matches.push(idx + 1);
+            }
+        }
+
+        if self.search_matches.is_empty() {
+            self.status_message = format!("Pattern not found: '{}'", query);
+            return;
+        }
+
+        if let Some(pos) = self
+            .search_matches
+            .iter()
+            .position(|&l| l >= self.cursor_line)
+        {
+            self.search_match_index = pos;
+        } else {
+            self.search_match_index = 0;
+        }
+
+        let target_line = self.search_matches[self.search_match_index];
+        self.goto_line(target_line);
+        self.status_message = format!(
+            "Search match {}/{} for '{}' on line {}",
+            self.search_match_index + 1,
+            self.search_matches.len(),
+            query,
+            target_line
+        );
+    }
+
+    pub fn search_next(&mut self) {
+        if self.search_matches.is_empty() {
+            if let Some(query) = self.last_search_query.clone() {
+                self.search_text(&query);
+            } else {
+                self.status_message = "No active search query".to_string();
+            }
+            return;
+        }
+
+        self.search_match_index = (self.search_match_index + 1) % self.search_matches.len();
+        let target_line = self.search_matches[self.search_match_index];
+        self.goto_line(target_line);
+        if let Some(query) = &self.last_search_query {
+            self.status_message = format!(
+                "Search match {}/{} for '{}' on line {}",
+                self.search_match_index + 1,
+                self.search_matches.len(),
+                query,
+                target_line
+            );
+        }
+    }
+
+    pub fn search_prev(&mut self) {
+        if self.search_matches.is_empty() {
+            if let Some(query) = self.last_search_query.clone() {
+                self.search_text(&query);
+            } else {
+                self.status_message = "No active search query".to_string();
+            }
+            return;
+        }
+
+        if self.search_match_index == 0 {
+            self.search_match_index = self.search_matches.len() - 1;
+        } else {
+            self.search_match_index -= 1;
+        }
+
+        let target_line = self.search_matches[self.search_match_index];
+        self.goto_line(target_line);
+        if let Some(query) = &self.last_search_query {
+            self.status_message = format!(
+                "Search match {}/{} for '{}' on line {}",
+                self.search_match_index + 1,
+                self.search_matches.len(),
+                query,
+                target_line
+            );
+        }
+    }
+
+    pub fn open_symbol_prompt(&mut self) {
+        let source_code = self.code_lines.join("\n");
+        let file_path = self.current_file_path().unwrap_or_default();
+        self.symbol_matches =
+            crate::treesitter::extract_symbols(&self.grammar_registry, &file_path, &source_code);
+        self.symbol_selected = 0;
+        self.input_buffer.clear();
+        self.input_prompt = Some(InputPrompt::SearchSymbol);
+        self.status_message = format!(
+            "Search symbol ({} symbols found):",
+            self.symbol_matches.len()
+        );
+    }
+
+    pub fn filtered_symbols(&self, filter: &str) -> Vec<crate::treesitter::SymbolItem> {
+        if filter.is_empty() {
+            self.symbol_matches.clone()
+        } else {
+            let lower = filter.to_lowercase();
+            self.symbol_matches
+                .iter()
+                .filter(|s| s.name.to_lowercase().contains(&lower))
+                .cloned()
+                .collect()
+        }
+    }
+
+    pub fn handle_input_key(&mut self, key: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Esc => {
+                self.input_prompt = None;
+                self.input_buffer.clear();
+                self.status_message = "Cancelled prompt.".to_string();
+            }
+            KeyCode::Enter => {
+                self.submit_input_prompt();
+            }
+            KeyCode::Backspace => {
+                self.input_buffer.pop();
+            }
+            KeyCode::Up => {
+                if self.input_prompt == Some(InputPrompt::SearchSymbol) && self.symbol_selected > 0
+                {
+                    self.symbol_selected -= 1;
+                }
+            }
+            KeyCode::Down => {
+                if self.input_prompt == Some(InputPrompt::SearchSymbol) {
+                    let filtered = self.filtered_symbols(&self.input_buffer.clone());
+                    if !filtered.is_empty() && self.symbol_selected + 1 < filtered.len() {
+                        self.symbol_selected += 1;
+                    }
+                }
+            }
+            KeyCode::Char(c) => {
+                self.input_buffer.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn submit_input_prompt(&mut self) {
+        let prompt = match self.input_prompt.take() {
+            Some(p) => p,
+            None => return,
+        };
+        let input = self.input_buffer.trim().to_string();
+        self.input_buffer.clear();
+
+        match prompt {
+            InputPrompt::GotoLine => {
+                if let Ok(line_num) = input.parse::<usize>() {
+                    self.goto_line(line_num);
+                } else {
+                    self.status_message = format!("Invalid line number: '{}'", input);
+                }
+            }
+            InputPrompt::SearchText => {
+                self.search_text(&input);
+            }
+            InputPrompt::SearchSymbol => {
+                let filtered = self.filtered_symbols(&input);
+                if let Some(item) = filtered.get(self.symbol_selected) {
+                    let line = item.line_number;
+                    self.goto_line(line);
+                } else if !filtered.is_empty() {
+                    let line = filtered[0].line_number;
+                    self.goto_line(line);
+                } else {
+                    self.status_message = format!("No matching symbol for '{}'", input);
+                }
             }
             Action::ExpandFolder => {
                 if self.sidebar_view == SidebarView::FileExplorer {

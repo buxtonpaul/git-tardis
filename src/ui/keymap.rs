@@ -219,6 +219,7 @@ impl KeymapRegistry {
         self.bind(Scope::Global, "3", Action::SetSidebarView(3));
         self.bind(Scope::Global, "4", Action::SetSidebarView(4));
         self.bind(Scope::Global, "m", Action::CycleNavMode);
+        self.bind(Scope::Global, "E", Action::EditHere);
 
         // Page navigation shortcuts
         self.bind(Scope::Global, "<C-d>", Action::HalfPageDown);
@@ -242,6 +243,7 @@ impl KeymapRegistry {
         self.bind(Scope::Sidebar, "h", Action::CollapseFolder);
         self.bind(Scope::Sidebar, " ", Action::ToggleFolder);
         self.bind(Scope::Sidebar, "c", Action::ToggleTimelineFilter);
+        self.bind(Scope::Sidebar, "E", Action::EditHere);
 
         // Code Viewer scope
         self.bind(Scope::CodeViewer, "j", Action::MoveDown);
