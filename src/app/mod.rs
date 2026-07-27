@@ -119,6 +119,8 @@ pub struct AppState {
     pub file_diff_highlights: std::collections::HashMap<usize, crate::git::DiffLineType>,
     pub blame_cache: std::collections::HashMap<(String, Option<String>), Vec<BlameLine>>,
     pub blame_subprocess_count: usize,
+    pub last_loaded_file: Option<String>,
+    pub last_loaded_commit: Option<String>,
 }
 
 impl AppState {
@@ -177,6 +179,8 @@ impl AppState {
             file_diff_highlights: std::collections::HashMap::new(),
             blame_cache: std::collections::HashMap::new(),
             blame_subprocess_count: 0,
+            last_loaded_file: None,
+            last_loaded_commit: None,
         }
     }
 
@@ -585,12 +589,17 @@ impl AppState {
             }
         }
 
-        let clean_path = match self.current_file_path() {
+        let target_file = self.current_file_path();
+        let target_commit = self.selected_commit_hash.clone();
+
+        let clean_path = match target_file {
             Some(p) => p,
             None => {
                 self.code_lines.clear();
                 self.cursor_line = 1;
                 self.code_scroll_offset = 0;
+                self.last_loaded_file = None;
+                self.last_loaded_commit = None;
                 self.update_current_line_blame();
                 self.update_candidate_commits();
                 self.update_file_diff_highlights();
@@ -598,24 +607,26 @@ impl AppState {
             }
         };
 
-        if let Some(hash) = &self.selected_commit_hash {
+        let old_cursor_line = self.cursor_line;
+        let old_scroll_offset = self.code_scroll_offset;
+        let visual_row = old_cursor_line.saturating_sub(old_scroll_offset + 1);
+
+        let mut loaded_lines: Option<Vec<String>> = None;
+
+        if let Some(hash) = &target_commit {
             let short_hash = &hash[..7.min(hash.len())];
             if let Some(repo) = self.repo() {
                 match repo.get_file_at_commit(hash, &clean_path) {
                     Ok(content) => {
-                        self.code_lines = content.lines().map(|s| s.to_string()).collect();
-                        self.cursor_line = 1;
-                        self.code_scroll_offset = 0;
+                        loaded_lines = Some(content.lines().map(|s| s.to_string()).collect());
                         self.status_message =
                             format!("Loaded {} at commit {}", clean_path, short_hash);
                     }
                     Err(_) => {
-                        self.code_lines = vec![format!(
+                        loaded_lines = Some(vec![format!(
                             "File '{}' did not exist at commit {}",
                             clean_path, short_hash
-                        )];
-                        self.cursor_line = 1;
-                        self.code_scroll_offset = 0;
+                        )]);
                         self.status_message = format!(
                             "File '{}' did not exist at commit {}",
                             clean_path, short_hash
@@ -626,17 +637,64 @@ impl AppState {
         } else {
             let file_path = self.repo_path.join(&clean_path);
             if let Ok(content) = std::fs::read_to_string(&file_path) {
-                self.code_lines = content.lines().map(|s| s.to_string()).collect();
-                self.cursor_line = 1;
-                self.code_scroll_offset = 0;
+                loaded_lines = Some(content.lines().map(|s| s.to_string()).collect());
                 self.status_message = format!("Loaded file: {}", clean_path);
             } else {
-                self.code_lines.clear();
-                self.cursor_line = 1;
-                self.code_scroll_offset = 0;
+                loaded_lines = Some(Vec::new());
                 self.status_message = format!("Could not read file: {}", clean_path);
             }
         }
+
+        if let Some(new_lines) = loaded_lines {
+            let same_file = self.last_loaded_file.as_ref() == Some(&clean_path);
+            let same_commit = self.last_loaded_commit == target_commit;
+
+            if same_file && !new_lines.is_empty() {
+                if same_commit {
+                    let new_cursor = old_cursor_line.clamp(1, new_lines.len());
+                    let max_scroll = new_lines.len().saturating_sub(1);
+                    let clamped_scroll = old_scroll_offset.min(max_scroll);
+
+                    self.code_lines = new_lines;
+                    self.cursor_line = new_cursor;
+                    self.code_scroll_offset = clamped_scroll;
+                } else {
+                    let diff_text = self
+                        .repo()
+                        .and_then(|repo| {
+                            repo.get_diff_between(
+                                self.last_loaded_commit.as_deref(),
+                                target_commit.as_deref(),
+                                &clean_path,
+                            )
+                            .ok()
+                        })
+                        .unwrap_or_default();
+
+                    let mapped_line =
+                        crate::git::diff_parser::map_line_number(&diff_text, old_cursor_line);
+                    let new_cursor = mapped_line.clamp(1, new_lines.len());
+                    let new_scroll = new_cursor.saturating_sub(visual_row + 1);
+                    let max_scroll = new_lines.len().saturating_sub(1);
+                    let clamped_scroll = new_scroll.min(max_scroll);
+
+                    self.code_lines = new_lines;
+                    self.cursor_line = new_cursor;
+                    self.code_scroll_offset = clamped_scroll;
+                }
+
+                if self.code_viewport_height > 0 {
+                    self.ensure_cursor_visible(self.code_viewport_height);
+                }
+            } else {
+                self.code_lines = new_lines;
+                self.cursor_line = 1;
+                self.code_scroll_offset = 0;
+            }
+        }
+
+        self.last_loaded_file = Some(clean_path);
+        self.last_loaded_commit = target_commit;
 
         self.update_current_line_blame();
         self.update_candidate_commits();
@@ -736,18 +794,11 @@ impl AppState {
             direction,
         }) {
             Ok(Some(result)) => {
+                let status_msg = result.status_message;
                 self.update_state_for_commit_hash(result.commit_hash);
                 self.active_file = Some(result.file_path);
-                self.code_lines = result.code_lines;
-                self.code_scroll_offset = 0;
-                if self.code_lines.is_empty() {
-                    self.cursor_line = 1;
-                } else {
-                    self.cursor_line = self.cursor_line.clamp(1, self.code_lines.len());
-                }
-                self.status_message = result.status_message;
-                self.update_current_line_blame();
-                self.update_file_diff_highlights();
+                self.load_currently_selected_file();
+                self.status_message = status_msg;
             }
             Ok(None) => {
                 self.reset_time_travel();

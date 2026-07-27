@@ -38,4 +38,25 @@ impl GitRepo {
         let target = format!("{}:{}", commit_hash, path);
         self.run_git(&["show", &target])
     }
+
+    /// Retrieve patch diff between two commits/states for a specific path (`git diff <from> <to> -- <path>`).
+    pub fn get_diff_between(
+        &self,
+        from_hash: Option<&str>,
+        to_hash: Option<&str>,
+        path: &str,
+    ) -> Result<String, GitError> {
+        match (from_hash, to_hash) {
+            (Some(h1), Some(h2)) => {
+                if h1 == h2 {
+                    Ok(String::new())
+                } else {
+                    self.run_git(&["diff", h1, h2, "--", path])
+                }
+            }
+            (Some(h1), None) => self.run_git(&["diff", h1, "--", path]),
+            (None, Some(h2)) => self.run_git(&["diff", "-R", h2, "--", path]),
+            (None, None) => Ok(String::new()),
+        }
+    }
 }

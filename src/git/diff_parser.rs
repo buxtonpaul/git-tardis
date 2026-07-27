@@ -196,6 +196,78 @@ pub fn resolve_file_line_number(code_lines: &[String], cursor_line: usize) -> us
     current_new_line
 }
 
+/// Map a 1-based line number in version A to its corresponding 1-based line number in version B
+/// using unified diff text between version A and version B.
+pub fn map_line_number(diff_text: &str, old_line: usize) -> usize {
+    if old_line == 0 {
+        return 1;
+    }
+    if diff_text.is_empty() {
+        return old_line;
+    }
+
+    let mut cur_old = 1;
+    let mut cur_new = 1;
+    let mut in_hunk = false;
+
+    for line in diff_text.lines() {
+        if line.starts_with("@@") {
+            if let Some((old_start, _, new_start, _)) = parse_hunk_header(line) {
+                if !in_hunk {
+                    if old_line < old_start {
+                        return old_line;
+                    }
+                } else if old_line < old_start {
+                    let delta = old_line.saturating_sub(cur_old);
+                    return cur_new + delta;
+                }
+
+                cur_old = old_start;
+                cur_new = new_start;
+                in_hunk = true;
+                continue;
+            }
+        }
+
+        if !in_hunk {
+            continue;
+        }
+
+        if line.starts_with("diff ") || line.starts_with("index ") {
+            if in_hunk && old_line >= cur_old {
+                let delta = old_line.saturating_sub(cur_old);
+                return cur_new + delta;
+            }
+            in_hunk = false;
+            continue;
+        }
+
+        if line.starts_with('-') && !line.starts_with("---") {
+            if cur_old == old_line {
+                return cur_new;
+            }
+            cur_old += 1;
+        } else if line.starts_with('+') && !line.starts_with("+++") {
+            cur_new += 1;
+        } else if line.starts_with('\\') {
+            continue;
+        } else {
+            if cur_old == old_line {
+                return cur_new;
+            }
+            cur_old += 1;
+            cur_new += 1;
+        }
+    }
+
+    if in_hunk && old_line >= cur_old {
+        let delta = old_line.saturating_sub(cur_old);
+        return cur_new + delta;
+    }
+
+    old_line
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,5 +363,32 @@ index 1234567..89abcde 100644
 
         // Context line 13
         assert_eq!(resolve_file_line_number(&diff_lines, 10), 13);
+    }
+
+    #[test]
+    fn test_map_line_number() {
+        let diff = r#"diff --git a/main.rs b/main.rs
+--- a/main.rs
++++ b/main.rs
+@@ -1,4 +1,6 @@
+ line 1
++line 1.5 added
++line 1.6 added
+ line 2
+-line 3
++line 3 modified
+ line 4
+"#;
+
+        // line 1 -> line 1
+        assert_eq!(map_line_number(diff, 1), 1);
+        // line 2 -> line 4 (because 2 lines added before it)
+        assert_eq!(map_line_number(diff, 2), 4);
+        // line 3 (modified) -> line 5
+        assert_eq!(map_line_number(diff, 3), 5);
+        // line 4 -> line 6
+        assert_eq!(map_line_number(diff, 4), 6);
+        // line 10 (after hunk) -> line 12
+        assert_eq!(map_line_number(diff, 10), 12);
     }
 }
