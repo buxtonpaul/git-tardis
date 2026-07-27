@@ -120,6 +120,42 @@ fn test_file_explorer_rendering_tree_nodes() {
 }
 
 #[test]
+fn test_file_explorer_modified_file_highlighting() {
+    let backend = TestBackend::new(80, 20);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    let mut app = AppState::new(PathBuf::from("."));
+    app.files = vec![
+        "README.md".to_string(),
+        "src/app/mod.rs".to_string(),
+        "src/main.rs".to_string(),
+    ];
+    app.expand_all_folders();
+    app.sidebar_view = SidebarView::FileExplorer;
+    app.active_panel = ActivePanel::Sidebar;
+
+    // Set dirty/modified files
+    app.dirty_files = vec![
+        git_tardis::app::ModifiedFileEntry::new("src/app/mod.rs", "M"),
+        git_tardis::app::ModifiedFileEntry::new("README.md", "??"),
+    ];
+
+    terminal.draw(|f| render(f, &mut app)).unwrap();
+    let dbg = format!("{:?}", terminal.backend().buffer());
+
+    // Modified file badges
+    assert!(dbg.contains("mod.rs [M]"));
+    assert!(dbg.contains("README.md [??]"));
+
+    // Directories containing modified files get [*] indicator badge
+    assert!(dbg.contains("src/ [*]"));
+    assert!(dbg.contains("app/ [*]"));
+
+    // Clean file has no status badge
+    assert!(!dbg.contains("main.rs ["));
+}
+
+#[test]
 fn test_folder_expansion_state_preserved_across_commit_switches_and_reset() {
     let temp_dir = tempfile::tempdir().unwrap();
     let repo_path = temp_dir.path();
