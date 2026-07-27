@@ -99,20 +99,102 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     } else {
                         "  "
                     };
-                    let display_text = format!("{}{}{}", indent, prefix, item.name);
 
-                    let style = if i == sel_index && is_sidebar_active {
-                        Style::default().bg(Color::Blue).fg(Color::White)
-                    } else if i == sel_index {
-                        Style::default().fg(Color::Yellow)
-                    } else if item.is_dir {
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD)
+                    let is_selected = i == sel_index;
+                    let is_active_item = is_selected && is_sidebar_active;
+
+                    if item.is_dir {
+                        let has_modified = state.dir_has_modified_files(&item.path);
+                        let name_style = if is_active_item {
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD)
+                        } else if is_selected || has_modified {
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default()
+                                .fg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD)
+                        };
+
+                        let mut spans = vec![
+                            Span::styled(
+                                format!("{}{}", indent, prefix),
+                                Style::default().fg(Color::Cyan),
+                            ),
+                            Span::styled(item.name.clone(), name_style),
+                        ];
+
+                        if has_modified {
+                            let badge_style = if is_active_item {
+                                Style::default()
+                                    .fg(Color::White)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                Style::default()
+                                    .fg(Color::Yellow)
+                                    .add_modifier(Modifier::BOLD)
+                            };
+                            spans.push(Span::styled(" [*]", badge_style));
+                        }
+
+                        let item_style = if is_active_item {
+                            Style::default().bg(Color::Blue)
+                        } else {
+                            Style::default()
+                        };
+
+                        ListItem::new(Line::from(spans)).style(item_style)
                     } else {
-                        Style::default()
-                    };
-                    ListItem::new(display_text).style(style)
+                        let status_code = state.file_modified_status(&item.path).unwrap_or("");
+                        let file_color = match status_code {
+                            "M" | " M" | "M " => Color::Yellow,
+                            "A" | " A" | "A " | "?" | "??" => Color::Green,
+                            "D" | " D" | "D " => Color::Red,
+                            "R" | "C" | "U" => Color::Magenta,
+                            _ if !status_code.is_empty() => Color::Yellow,
+                            _ => Color::Reset,
+                        };
+
+                        let name_style = if is_active_item {
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD)
+                        } else if is_selected {
+                            Style::default().fg(Color::Yellow)
+                        } else if !status_code.is_empty() {
+                            Style::default().fg(file_color).add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default()
+                        };
+
+                        let mut spans = vec![
+                            Span::raw(format!("{}{}", indent, prefix)),
+                            Span::styled(item.name.clone(), name_style),
+                        ];
+
+                        if !status_code.is_empty() {
+                            let badge = format!(" [{}]", status_code.trim());
+                            let badge_style = if is_active_item {
+                                Style::default()
+                                    .fg(Color::White)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                Style::default().fg(file_color).add_modifier(Modifier::BOLD)
+                            };
+                            spans.push(Span::styled(badge, badge_style));
+                        }
+
+                        let item_style = if is_active_item {
+                            Style::default().bg(Color::Blue)
+                        } else {
+                            Style::default()
+                        };
+
+                        ListItem::new(Line::from(spans)).style(item_style)
+                    }
                 })
                 .collect();
             let list = List::new(items).block(sidebar_block);

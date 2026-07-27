@@ -210,6 +210,50 @@ impl AppState {
         flatten_file_tree(&tree, &self.expanded_folders)
     }
 
+    pub fn active_modified_files(&self) -> &[ModifiedFileEntry] {
+        if self.selected_commit_hash.is_some() {
+            &self.modified_files
+        } else {
+            &self.dirty_files
+        }
+    }
+
+    pub fn file_modified_status(&self, path: &str) -> Option<&str> {
+        let clean_target = path.trim_start_matches("./");
+        let entries = self.active_modified_files();
+        entries.iter().find_map(|e| {
+            let clean_entry = e.path.trim_start_matches("./");
+            if clean_entry == clean_target {
+                let status = e.status.trim();
+                if status.is_empty() {
+                    Some("M")
+                } else {
+                    Some(status)
+                }
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn dir_has_modified_files(&self, dir_path: &str) -> bool {
+        let clean_dir = dir_path.trim_start_matches("./");
+        if clean_dir.is_empty() {
+            return false;
+        }
+        let prefix = if clean_dir.ends_with('/') {
+            clean_dir.to_string()
+        } else {
+            format!("{}/", clean_dir)
+        };
+
+        let entries = self.active_modified_files();
+        entries.iter().any(|e| {
+            let clean_entry = e.path.trim_start_matches("./");
+            clean_entry.starts_with(&prefix)
+        })
+    }
+
     pub fn expand_all_folders(&mut self) {
         let tree = build_file_tree(&self.files);
         collect_all_dir_paths(&tree, &mut self.expanded_folders);
