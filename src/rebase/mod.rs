@@ -77,29 +77,31 @@ pub fn get_rebase_upstream(dir: &Path, commit_hash: &str) -> Result<String, Stri
     }
 }
 
-/// Check if a rebase is currently in progress in the repository
-pub fn is_rebase_in_progress(repo_path: &Path) -> bool {
-    let git_dir_res = Command::new("git")
+/// Resolve the exact Git directory for a repository path
+pub fn get_git_dir(repo_path: &Path) -> PathBuf {
+    let output = Command::new("git")
         .current_dir(repo_path)
         .args(["rev-parse", "--git-dir"])
         .output();
 
-    if let Ok(out) = git_dir_res {
+    if let Ok(out) = output {
         if out.status.success() {
-            let git_dir_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            let git_dir = if Path::new(&git_dir_str).is_absolute() {
-                PathBuf::from(&git_dir_str)
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let p = Path::new(&s);
+            if p.is_absolute() {
+                return p.to_path_buf();
             } else {
-                repo_path.join(&git_dir_str)
-            };
-            if git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists() {
-                return true;
+                return repo_path.join(p);
             }
         }
     }
+    repo_path.join(".git")
+}
 
-    repo_path.join(".git").join("rebase-merge").exists()
-        || repo_path.join(".git").join("rebase-apply").exists()
+/// Check if a rebase is currently in progress in the repository
+pub fn is_rebase_in_progress(repo_path: &Path) -> bool {
+    let git_dir = get_git_dir(repo_path);
+    git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists()
 }
 
 /// Prompt and handle startup protection if repository is launched while mid-rebase.
@@ -241,7 +243,8 @@ pub fn execute_edit_here<R: BufRead>(
         }
     };
 
-    let rebase_merge_dir = repo_path.join(".git").join("rebase-merge");
+    let git_dir = get_git_dir(repo_path);
+    let rebase_merge_dir = git_dir.join("rebase-merge");
 
     if rebase_merge_dir.exists() {
         // Stopped at target commit! Spawn interactive subshell unless non-interactive test
