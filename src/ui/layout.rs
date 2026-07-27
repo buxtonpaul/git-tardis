@@ -276,18 +276,28 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
     if state.code_lines.is_empty() {
         formatted_code = crate::ui::splash::render_splashscreen_lines(state.git_version.as_deref());
     } else {
-        let grammar_entry = state.current_file_path().and_then(|path| {
-            let ext = std::path::Path::new(&path)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
-            state.grammar_registry.get_by_extension(ext)
-        });
+        let cur_path = state.current_file_path();
+        let is_markdown = crate::ui::markdown::is_markdown_file(cur_path.as_deref())
+            && state.render_markdown_formatted;
+
+        let grammar_entry = if !is_markdown {
+            cur_path.and_then(|path| {
+                let ext = std::path::Path::new(&path)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("");
+                state.grammar_registry.get_by_extension(ext)
+            })
+        } else {
+            None
+        };
 
         let source_code = state.code_lines.join("\n");
         let highlighted_lines = grammar_entry
             .as_ref()
             .map(|entry| highlight_viewport(entry, &source_code, 1, state.code_lines.len()));
+
+        let mut md_state = crate::ui::markdown::MarkdownFormatterState::new();
 
         for (idx, line) in state.code_lines.iter().enumerate() {
             let line_num = idx + 1;
@@ -326,7 +336,31 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             let gutter_text = format!("{:>3} {}", line_num, prefix);
             let mut spans = vec![Span::styled(gutter_text, gutter_style)];
 
-            if let Some(hl_line) = highlighted_lines.as_ref().and_then(|hl| hl.get(idx)) {
+            if is_markdown {
+                let base_style = if is_cursor && is_code_active {
+                    Style::default()
+                        .bg(Color::DarkGray)
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else if is_cursor {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    match line_diff_type {
+                        crate::git::DiffLineType::Added => Style::default().fg(Color::Green),
+                        crate::git::DiffLineType::Modified => Style::default().fg(Color::Yellow),
+                        crate::git::DiffLineType::Deleted => Style::default().fg(Color::Red),
+                        crate::git::DiffLineType::HunkHeader => Style::default().fg(Color::Cyan),
+                        crate::git::DiffLineType::DiffHeader => Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                        crate::git::DiffLineType::Context => Style::default(),
+                    }
+                };
+
+                let md_spans =
+                    crate::ui::markdown::render_markdown_line(line, &mut md_state, base_style);
+                spans.extend(md_spans);
+            } else if let Some(hl_line) = highlighted_lines.as_ref().and_then(|hl| hl.get(idx)) {
                 for hl_span in &hl_line.spans {
                     let mut span_style = capture_name_to_style(&hl_span.capture_name);
                     if is_cursor && is_code_active {
@@ -446,6 +480,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 "  1 / 2 / 3 / 4   Switch Sidebar View (1: Explorer, 2: Modified, 3: Timeline, 4: Candidates)",
             ),
             Line::from("  m               Cycle Navigation Mode (Commit, File, Function, Line)"),
+            Line::from("  M               Toggle Formatted Markdown View vs Raw Text"),
             Line::from("  q / <Esc>       Close Help / Reset Time Travel / Exit Application"),
             Line::from(""),
             Line::from(vec![Span::styled(

@@ -121,6 +121,7 @@ pub struct AppState {
     pub blame_subprocess_count: usize,
     pub last_loaded_file: Option<String>,
     pub last_loaded_commit: Option<String>,
+    pub render_markdown_formatted: bool,
 }
 
 impl AppState {
@@ -181,6 +182,7 @@ impl AppState {
             blame_subprocess_count: 0,
             last_loaded_file: None,
             last_loaded_commit: None,
+            render_markdown_formatted: true,
         }
     }
 
@@ -1076,6 +1078,17 @@ impl AppState {
                 } else {
                     self.status_message = "Closed TARDIS splashscreen.".to_string();
                 }
+            }
+            Action::ToggleMarkdownFormat => {
+                self.render_markdown_formatted = !self.render_markdown_formatted;
+                self.status_message = format!(
+                    "Markdown formatted rendering: {}",
+                    if self.render_markdown_formatted {
+                        "ENABLED"
+                    } else {
+                        "DISABLED"
+                    }
+                );
             }
             Action::ToggleFocus => self.toggle_panel_focus(),
             Action::SetSidebarView(index) => match index {

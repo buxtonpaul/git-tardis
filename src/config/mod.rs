@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Deserialize, Clone, Default, PartialEq, Eq)]
 pub struct Config {
     pub scrolloff: Option<usize>,
+    pub render_markdown: Option<bool>,
     pub languages: Option<Vec<LanguageConfig>>,
     pub keymaps: Option<KeymapConfig>,
 }
@@ -56,6 +57,7 @@ pub struct ScopeKeymapConfig {
     pub jump_prev_line: Option<KeyBindingConfig>,
     pub inline_rewrite: Option<KeyBindingConfig>,
     pub edit_here: Option<KeyBindingConfig>,
+    pub toggle_markdown_format: Option<KeyBindingConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
