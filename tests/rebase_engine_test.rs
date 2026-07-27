@@ -114,6 +114,20 @@ fn test_sequence_editor_todo_rewrite() {
 }
 
 #[test]
+fn test_sequence_editor_todo_rewrite_merge_commit() {
+    let temp_dir = TempDir::new().unwrap();
+    let todo_file = temp_dir.path().join("git-rebase-todo");
+
+    let todo_content = "label onto\npick a1b2c3d Commit 1\nmerge -C 8889990 label-name # Merge branch\n";
+    fs::write(&todo_file, todo_content).unwrap();
+
+    handle_sequence_editor_mark_edit("8889990", &todo_file).unwrap();
+
+    let updated = fs::read_to_string(&todo_file).unwrap();
+    assert!(updated.contains("merge -C 8889990 label-name # Merge branch\nbreak"));
+}
+
+#[test]
 fn test_execute_edit_here_successful_rebase() {
     let _lock = REBASE_TEST_MUTEX.lock().unwrap();
     let (temp_dir, _h1, h2, _h3) = setup_test_repo();

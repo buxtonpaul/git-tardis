@@ -41,6 +41,20 @@ pub fn handle_sequence_editor_mark_edit(
                     continue;
                 }
             }
+        } else if line.starts_with("merge ") || line.starts_with("m ") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            let is_match = parts.iter().any(|part| {
+                part.len() >= 7
+                    && part.chars().all(|c| c.is_ascii_hexdigit())
+                    && (part.starts_with(target_hash) || target_hash.starts_with(part))
+            });
+            if is_match {
+                modified.push_str(line);
+                modified.push('\n');
+                modified.push_str("break\n");
+                matched = true;
+                continue;
+            }
         }
         modified.push_str(line);
         modified.push('\n');
@@ -220,12 +234,12 @@ pub fn execute_edit_here<R: BufRead>(
 
     println!("\n================================================================================");
     println!("Git-tardis: Pausing timeline at commit {}", target_hash);
-    println!("================================================================ clever\n");
+    println!("================================================================\n");
 
     let mut rebase_cmd = Command::new("git");
     rebase_cmd.current_dir(repo_path);
     rebase_cmd.env("GIT_SEQUENCE_EDITOR", &sequence_editor_cmd);
-    rebase_cmd.arg("rebase").arg("-i").arg("--autostash");
+    rebase_cmd.arg("rebase").arg("-i").arg("--autostash").arg("--rebase-merges");
     if upstream == "--root" {
         rebase_cmd.arg("--root");
     } else {
