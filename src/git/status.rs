@@ -80,34 +80,43 @@ impl GitRepo {
         Ok(statuses)
     }
 
-    /// Get list of files modified in a specific commit (`git diff-tree --no-commit-id --name-status -r --root <commit_hash>`).
+    /// Get list of files modified in a specific commit (`git diff-tree -z --no-commit-id --name-status -r -M --root <commit_hash>`).
     pub fn get_commit_files(&self, commit_hash: &str) -> Result<Vec<FileStatus>, GitError> {
-        let output = self.run_git(&[
+        let bytes = self.run_git_bytes(&[
             "diff-tree",
+            "-z",
             "--no-commit-id",
             "--name-status",
             "-r",
+            "-M",
             "--root",
             commit_hash,
         ])?;
 
         let mut results = Vec::new();
+        let mut slices = bytes.split(|&b| b == 0);
 
-        for line in output.lines() {
-            let line = line.trim();
-            if line.is_empty() {
+        while let Some(status_slice) = slices.next() {
+            if status_slice.is_empty() {
                 continue;
             }
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() >= 2 {
-                let status_str = parts[0];
-                let path = if parts.len() >= 3 {
-                    parts[2] // Rename/copy target path
-                } else {
-                    parts[1]
-                };
-                let status_char = status_str.chars().next().unwrap_or('M');
-                results.push(FileStatus::new(path, status_char, ' '));
+
+            let status_str = String::from_utf8_lossy(status_slice);
+            let status_char = status_str.chars().next().unwrap_or('M');
+
+            if status_char == 'R' || status_char == 'C' {
+                let _old_path = slices.next();
+                if let Some(new_path_slice) = slices.next() {
+                    let path = String::from_utf8_lossy(new_path_slice).to_string();
+                    if !path.is_empty() {
+                        results.push(FileStatus::new(path, status_char, ' '));
+                    }
+                }
+            } else if let Some(path_slice) = slices.next() {
+                let path = String::from_utf8_lossy(path_slice).to_string();
+                if !path.is_empty() {
+                    results.push(FileStatus::new(path, status_char, ' '));
+                }
             }
         }
 

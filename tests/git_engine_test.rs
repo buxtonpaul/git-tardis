@@ -325,6 +325,46 @@ fn test_get_commit_files() {
 }
 
 #[test]
+fn test_get_commit_files_special_filenames_and_renames() {
+    let (_dir, repo) = setup_test_repo();
+
+    let special_filename = "file with spaces and\ttabs.txt";
+    commit_file(&repo, special_filename, "special content", "Commit Special");
+
+    let history = repo.get_commit_history(Some(1)).unwrap();
+    let c_hash = &history[0].hash;
+
+    let files = repo.get_commit_files(c_hash).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].path, special_filename);
+    assert_eq!(files[0].index_status, 'A');
+
+    // Test rename operation
+    let renamed_filename = "renamed file with spaces.txt";
+    let status = Command::new("git")
+        .args(["mv", special_filename, renamed_filename])
+        .current_dir(repo.work_dir())
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let status_commit = Command::new("git")
+        .args(["commit", "-m", "Rename special file"])
+        .current_dir(repo.work_dir())
+        .status()
+        .unwrap();
+    assert!(status_commit.success());
+
+    let rename_history = repo.get_commit_history(Some(1)).unwrap();
+    let rename_hash = &rename_history[0].hash;
+
+    let rename_files = repo.get_commit_files(rename_hash).unwrap();
+    assert_eq!(rename_files.len(), 1);
+    assert_eq!(rename_files[0].path, renamed_filename);
+    assert_eq!(rename_files[0].index_status, 'R');
+}
+
+#[test]
 fn test_list_files_at_commit() {
     let (_dir, repo) = setup_test_repo();
 
