@@ -10,6 +10,7 @@ M.defaults = {
   keymaps = {
     toggle = "<leader>gt",
   },
+  sync_theme = true,
 }
 
 M.options = {}

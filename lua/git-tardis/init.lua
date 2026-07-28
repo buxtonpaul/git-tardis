@@ -1,0 +1,69 @@
+local config = require("git-tardis.config")
+local terminal = require("git-tardis.terminal")
+
+local M = {}
+
+function M.setup(user_opts)
+  local opts = config.setup(user_opts)
+
+  if opts.keymaps and opts.keymaps.toggle then
+    vim.keymap.set("n", opts.keymaps.toggle, function()
+      M.toggle()
+    end, { desc = "Toggle Git-tardis" })
+  end
+
+  return opts
+end
+
+local function build_cmd_args(binary_path, custom_path)
+  local args = { binary_path }
+
+  if custom_path and custom_path ~= "" then
+    table.insert(args, "--file")
+    table.insert(args, custom_path)
+  else
+    local buf_name = vim.api.nvim_buf_get_name(0)
+    if buf_name ~= "" and vim.bo.buftype == "" then
+      table.insert(args, "--file")
+      table.insert(args, buf_name)
+
+      local cursor = vim.api.nvim_win_get_cursor(0)
+      if cursor and cursor[1] then
+        table.insert(args, "--line")
+        table.insert(args, tostring(cursor[1]))
+      end
+    end
+  end
+
+  return args
+end
+
+function M.open(custom_path)
+  local opts = config.options
+  if not opts.binary_path then
+    opts = config.setup()
+  end
+
+  local cmd_args = build_cmd_args(opts.binary_path, custom_path)
+  terminal.open(cmd_args, opts.window, opts.sync_theme)
+end
+
+function M.close()
+  terminal.close()
+end
+
+function M.toggle(custom_path)
+  local opts = config.options
+  if not opts.binary_path then
+    opts = config.setup()
+  end
+
+  if terminal.is_open() then
+    terminal.close()
+  else
+    local cmd_args = build_cmd_args(opts.binary_path, custom_path)
+    terminal.open(cmd_args, opts.window, opts.sync_theme)
+  end
+end
+
+return M
