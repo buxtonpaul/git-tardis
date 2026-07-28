@@ -9,6 +9,31 @@ use ratatui::{
 use crate::app::{ActivePanel, AppState, SidebarView};
 use crate::treesitter::{capture_name_to_style, highlight_viewport};
 
+/// Header block constraint height in characters
+pub const HEADER_HEIGHT: u16 = 3;
+
+/// Footer status bar constraint height in characters
+pub const FOOTER_HEIGHT: u16 = 3;
+
+/// Horizontal workspace percentage allocation for Left Sidebar
+pub const SIDEBAR_WIDTH_PERCENT: u16 = 32;
+
+/// Horizontal workspace percentage allocation for Right Code Viewer
+pub const CODE_VIEWER_WIDTH_PERCENT: u16 = 68;
+
+/// Vertical border and chrome overhead subtracted from pane area for content viewport height calculation
+pub const PANE_CHROME_HEIGHT: u16 = 2;
+
+/// Overlay modal layout percentages (Width %, Height %)
+pub const HELP_MODAL_WIDTH_PERCENT: u16 = 85;
+pub const HELP_MODAL_HEIGHT_PERCENT: u16 = 95;
+
+pub const SPLASH_MODAL_WIDTH_PERCENT: u16 = 80;
+pub const SPLASH_MODAL_HEIGHT_PERCENT: u16 = 88;
+
+pub const PROMPT_MODAL_WIDTH_PERCENT: u16 = 65;
+pub const PROMPT_MODAL_HEIGHT_PERCENT: u16 = 45;
+
 pub fn parse_color(s: &str) -> Option<Color> {
     let s = s.trim();
     if let Some(hex) = s.strip_prefix('#') {
@@ -54,9 +79,9 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Header & Sidebar tab selector
-            Constraint::Min(0),    // Main split workspace
-            Constraint::Length(3), // Footer status bar
+            Constraint::Length(HEADER_HEIGHT), // Header & Sidebar tab selector
+            Constraint::Min(0),                // Main split workspace
+            Constraint::Length(FOOTER_HEIGHT), // Footer status bar
         ])
         .split(frame.area());
 
@@ -94,10 +119,13 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         );
     frame.render_widget(tabs, chunks[0]);
 
-    // 2. Middle Main Workspace (32% Sidebar / 68% Code Viewer Split)
+    // 2. Middle Main Workspace (Sidebar / Code Viewer Split)
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(32), Constraint::Percentage(68)])
+        .constraints([
+            Constraint::Percentage(SIDEBAR_WIDTH_PERCENT),
+            Constraint::Percentage(CODE_VIEWER_WIDTH_PERCENT),
+        ])
         .split(chunks[1]);
 
     // Left Sidebar rendering
@@ -571,8 +599,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         }
     }
 
-    let viewport_height = main_chunks[1].height.saturating_sub(2) as usize;
-    state.sidebar_viewport_height = main_chunks[0].height.saturating_sub(2) as usize;
+    let viewport_height = main_chunks[1].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
+    state.sidebar_viewport_height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
     state.ensure_cursor_visible(viewport_height);
     let scroll_offset = state.code_scroll_offset;
 
@@ -593,7 +621,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     // 4. Keybindings Help Overlay Popup
     if state.show_help {
-        let area = centered_rect(85, 95, frame.area());
+        let area = centered_rect(HELP_MODAL_WIDTH_PERCENT, HELP_MODAL_HEIGHT_PERCENT, frame.area());
         frame.render_widget(Clear, area);
 
         let help_block = Block::default()
@@ -663,7 +691,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     // 5. TARDIS Splashscreen Overlay Popup
     if state.show_splashscreen {
-        let area = centered_rect(80, 88, frame.area());
+        let area = centered_rect(SPLASH_MODAL_WIDTH_PERCENT, SPLASH_MODAL_HEIGHT_PERCENT, frame.area());
         frame.render_widget(Clear, area);
 
         let splash_block = Block::default()
@@ -679,7 +707,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     // 6. Navigation Input Prompt Overlay Modal
     if let Some(prompt) = &state.input_prompt {
-        let area = centered_rect(65, 45, frame.area());
+        let area = centered_rect(PROMPT_MODAL_WIDTH_PERCENT, PROMPT_MODAL_HEIGHT_PERCENT, frame.area());
         frame.render_widget(Clear, area);
 
         let (title, prefix) = match prompt {
