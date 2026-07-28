@@ -13,6 +13,52 @@ A tool for time travelling through your git repositories, allowing you to naviga
 
 ---
 
+## Installation & Quick Start
+
+### Option 1: Homebrew (macOS & Linux)
+
+```bash
+brew tap buxtonpaul/tap
+brew install git-tardis
+```
+
+### Option 2: Build from Source
+
+Ensure you have the Rust toolchain installed:
+
+```bash
+git clone https://github.com/buxtonpaul/git-tardis.git
+cd git-tardis
+cargo build --release
+cargo install --path .
+```
+
+Verify installation:
+
+```bash
+git-tardis --version
+```
+
+For full installation details including Neovim setup (`git-tardis.nvim`), see [docs/installation.md](docs/installation.md).
+
+---
+
+## Basic Usage
+
+Launch Git-tardis in any Git repository:
+
+```bash
+# Launch in current repository
+git-tardis
+
+# Focus on a specific file and line on startup
+git-tardis -f src/main.rs -l 42
+```
+
+Press `?` inside Git-tardis at any time to open the interactive keybindings help screen.
+
+---
+
 ## Technical Specifications & Research
 
 The design and architecture of Git-tardis are backed by validated proofs of concept and technical specifications (see [docs/technical-specification.md](docs/technical-specification.md) for full architectural specs and historical commit references):
