@@ -239,7 +239,11 @@ pub fn execute_edit_here<R: BufRead>(
     let mut rebase_cmd = Command::new("git");
     rebase_cmd.current_dir(repo_path);
     rebase_cmd.env("GIT_SEQUENCE_EDITOR", &sequence_editor_cmd);
-    rebase_cmd.arg("rebase").arg("-i").arg("--autostash").arg("--rebase-merges");
+    rebase_cmd
+        .arg("rebase")
+        .arg("-i")
+        .arg("--autostash")
+        .arg("--rebase-merges");
     if upstream == "--root" {
         rebase_cmd.arg("--root");
     } else {

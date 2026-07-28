@@ -38,6 +38,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = AppState::new(args.path);
     load_repo_data(&mut app);
 
+    // Apply theme color overrides if supplied via CLI or env
+    let bg = args
+        .theme_bg
+        .as_deref()
+        .and_then(git_tardis::ui::parse_color);
+    let fg = args
+        .theme_fg
+        .as_deref()
+        .and_then(git_tardis::ui::parse_color);
+    if bg.is_some() || fg.is_some() {
+        app.set_theme_colors(bg, fg);
+    }
+
+    // If initial target file is specified, open file at specified line
+    if let Some(target_file) = args.file {
+        app.open_file_at_line(target_file, args.line);
+    }
+
     let mut registry = KeymapRegistry::new();
     if let Some(keymaps) = &config.keymaps {
         registry.apply_config(keymaps);

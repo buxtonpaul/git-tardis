@@ -9,7 +9,48 @@ use ratatui::{
 use crate::app::{ActivePanel, AppState, SidebarView};
 use crate::treesitter::{capture_name_to_style, highlight_viewport};
 
+pub fn parse_color(s: &str) -> Option<Color> {
+    let s = s.trim();
+    if let Some(hex) = s.strip_prefix('#') {
+        if hex.len() == 6 {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            return Some(Color::Rgb(r, g, b));
+        }
+    }
+    match s.to_lowercase().as_str() {
+        "black" => Some(Color::Black),
+        "red" => Some(Color::Red),
+        "green" => Some(Color::Green),
+        "yellow" => Some(Color::Yellow),
+        "blue" => Some(Color::Blue),
+        "magenta" => Some(Color::Magenta),
+        "cyan" => Some(Color::Cyan),
+        "gray" | "grey" => Some(Color::Gray),
+        "darkgray" | "darkgrey" => Some(Color::DarkGray),
+        "lightred" => Some(Color::LightRed),
+        "lightgreen" => Some(Color::LightGreen),
+        "lightyellow" => Some(Color::LightYellow),
+        "lightblue" => Some(Color::LightBlue),
+        "lightmagenta" => Some(Color::LightMagenta),
+        "lightcyan" => Some(Color::LightCyan),
+        "white" => Some(Color::White),
+        "reset" => Some(Color::Reset),
+        _ => None,
+    }
+}
+
 pub fn render(frame: &mut Frame, state: &mut AppState) {
+    if let Some(bg_color) = state.theme_bg {
+        let base_style = match state.theme_fg {
+            Some(fg_color) => Style::default().bg(bg_color).fg(fg_color),
+            None => Style::default().bg(bg_color),
+        };
+        let base_block = Block::default().style(base_style);
+        frame.render_widget(base_block, frame.area());
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -767,6 +808,15 @@ mod tests {
         assert!(content.contains("src/"));
         assert!(content.contains("main.rs"));
         assert!(content.contains("fn main() {}"));
+    }
+
+    #[test]
+    fn test_parse_color() {
+        assert_eq!(parse_color("#1e1e2e"), Some(Color::Rgb(30, 30, 46)));
+        assert_eq!(parse_color("#FFFFFF"), Some(Color::Rgb(255, 255, 255)));
+        assert_eq!(parse_color("blue"), Some(Color::Blue));
+        assert_eq!(parse_color("DarkGray"), Some(Color::DarkGray));
+        assert_eq!(parse_color("invalid"), None);
     }
 
     #[test]

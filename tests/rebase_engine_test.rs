@@ -118,7 +118,8 @@ fn test_sequence_editor_todo_rewrite_merge_commit() {
     let temp_dir = TempDir::new().unwrap();
     let todo_file = temp_dir.path().join("git-rebase-todo");
 
-    let todo_content = "label onto\npick a1b2c3d Commit 1\nmerge -C 8889990 label-name # Merge branch\n";
+    let todo_content =
+        "label onto\npick a1b2c3d Commit 1\nmerge -C 8889990 label-name # Merge branch\n";
     fs::write(&todo_file, todo_content).unwrap();
 
     handle_sequence_editor_mark_edit("8889990", &todo_file).unwrap();

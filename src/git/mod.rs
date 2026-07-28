@@ -37,6 +37,12 @@ impl GitRepo {
         &self.work_dir
     }
 
+    /// Get the top-level root directory of the working tree (works for subdirectories and worktrees).
+    pub fn get_toplevel(&self) -> Result<PathBuf, GitError> {
+        let output = self.run_git(&["rev-parse", "--show-toplevel"])?;
+        Ok(PathBuf::from(output.trim()))
+    }
+
     /// Check if the directory is inside a valid Git repository.
     pub fn check_is_repo(&self) -> Result<(), GitError> {
         let output = self.run_git(&["rev-parse", "--is-inside-work-tree"])?;

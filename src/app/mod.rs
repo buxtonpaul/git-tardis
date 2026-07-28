@@ -114,6 +114,9 @@ pub struct AppState {
     pub show_splashscreen: bool,
     pub git_version: Option<String>,
 
+    pub theme_bg: Option<ratatui::style::Color>,
+    pub theme_fg: Option<ratatui::style::Color>,
+
     pub grammar_registry: GrammarRegistry,
     pub current_line_blame: Option<BlameLine>,
     pub file_diff_highlights: std::collections::HashMap<usize, crate::git::DiffLineType>,
@@ -187,6 +190,9 @@ impl AppState {
             in_alternate_screen: false,
             show_help: false,
             show_splashscreen: false,
+
+            theme_bg: None,
+            theme_fg: None,
 
             grammar_registry: GrammarRegistry::new(),
             current_line_blame: None,
@@ -1527,6 +1533,78 @@ impl AppState {
         self.status_message = format!("Jumped to line {}", target);
     }
 
+    pub fn open_file_at_line<P: AsRef<std::path::Path>>(
+        &mut self,
+        file_path: P,
+        line: Option<usize>,
+    ) {
+        let raw_path = file_path.as_ref();
+
+        // Determine repository/worktree top-level root
+        let toplevel = self
+            .repo()
+            .and_then(|r| r.get_toplevel().ok())
+            .or_else(|| std::fs::canonicalize(&self.repo_path).ok())
+            .unwrap_or_else(|| self.repo_path.clone());
+
+        let canonical_toplevel = std::fs::canonicalize(&toplevel).unwrap_or(toplevel);
+
+        // Resolve absolute target file path
+        let abs_file = if raw_path.is_absolute() {
+            std::fs::canonicalize(raw_path).unwrap_or_else(|_| raw_path.to_path_buf())
+        } else {
+            let joined = self.repo_path.join(raw_path);
+            std::fs::canonicalize(&joined).unwrap_or(joined)
+        };
+
+        // Strip repo/worktree top-level prefix to obtain repo-relative path
+        let clean_path = if let Ok(rel) = abs_file.strip_prefix(&canonical_toplevel) {
+            rel.to_string_lossy().to_string()
+        } else {
+            raw_path
+                .to_string_lossy()
+                .trim_start_matches("./")
+                .to_string()
+        };
+
+        // Automatically expand parent folders of target file so it is visible in the file tree
+        let parts: Vec<&str> = clean_path.split('/').collect();
+        let mut current_dir = String::new();
+        for part in parts.iter().take(parts.len().saturating_sub(1)) {
+            if !current_dir.is_empty() {
+                current_dir.push('/');
+            }
+            current_dir.push_str(part);
+            self.expanded_folders.insert(current_dir.clone());
+        }
+
+        self.active_file = Some(clean_path.clone());
+
+        let items = self.visible_file_items();
+        if let Some(idx) = items
+            .iter()
+            .position(|it| it.path.trim_start_matches("./") == clean_path)
+        {
+            self.file_selected = idx;
+        }
+
+        self.load_currently_selected_file();
+        self.active_panel = ActivePanel::CodeViewer;
+
+        if let Some(line_num) = line {
+            self.goto_line(line_num);
+        }
+    }
+
+    pub fn set_theme_colors(
+        &mut self,
+        bg: Option<ratatui::style::Color>,
+        fg: Option<ratatui::style::Color>,
+    ) {
+        self.theme_bg = bg;
+        self.theme_fg = fg;
+    }
+
     pub fn search_text(&mut self, query: &str) {
         if query.is_empty() || self.code_lines.is_empty() {
             return;
@@ -1864,5 +1942,39 @@ mod tests {
 
         app.cursor_line = 9; // Context line
         assert_eq!(app.effective_cursor_line(), 13);
+    }
+
+    #[test]
+    fn test_open_file_at_line() {
+        let mut app = AppState::new(PathBuf::from("."));
+        app.files = vec!["src/main.rs".into(), "Cargo.toml".into()];
+        app.code_lines = vec![
+            "line 1".into(),
+            "line 2".into(),
+            "line 3".into(),
+            "line 4".into(),
+        ];
+
+        app.open_file_at_line("src/main.rs", Some(3));
+        assert_eq!(app.active_file, Some("src/main.rs".to_string()));
+        assert_eq!(app.active_panel, ActivePanel::CodeViewer);
+        assert_eq!(app.cursor_line, 3);
+    }
+
+    #[test]
+    fn test_set_theme_colors() {
+        let mut app = AppState::new(PathBuf::from("."));
+        assert_eq!(app.theme_bg, None);
+        assert_eq!(app.theme_fg, None);
+
+        app.set_theme_colors(
+            Some(ratatui::style::Color::Rgb(30, 30, 46)),
+            Some(ratatui::style::Color::Rgb(205, 214, 244)),
+        );
+        assert_eq!(app.theme_bg, Some(ratatui::style::Color::Rgb(30, 30, 46)));
+        assert_eq!(
+            app.theme_fg,
+            Some(ratatui::style::Color::Rgb(205, 214, 244))
+        );
     }
 }
