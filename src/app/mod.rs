@@ -91,8 +91,6 @@ pub struct AppState {
     pub modified_files: Vec<ModifiedFileEntry>,
     pub modified_selected: usize,
 
-    pub uncommitted_files: Vec<ModifiedFileEntry>,
-
     pub commits: Vec<CommitSummary>,
     pub commit_selected: usize,
     pub candidate_commits: Vec<CommitSummary>,
@@ -166,8 +164,6 @@ impl AppState {
 
             modified_files: Vec::new(),
             modified_selected: 0,
-
-            uncommitted_files: Vec::new(),
 
             commits: Vec::new(),
             commit_selected: 0,
@@ -645,7 +641,6 @@ impl AppState {
             if let Ok(statuses) = repo.get_status() {
                 let items: Vec<ModifiedFileEntry> =
                     statuses.into_iter().map(ModifiedFileEntry::from).collect();
-                self.uncommitted_files = items.clone();
                 self.dirty_files = items;
             }
             if let Ok(commits) = repo.get_commit_history(Some(50)) {

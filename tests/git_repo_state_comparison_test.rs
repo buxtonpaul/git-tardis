@@ -91,7 +91,6 @@ fn load_repo_into_app(app: &mut AppState) {
         if let Ok(statuses) = repo.get_status() {
             let items: Vec<ModifiedFileEntry> =
                 statuses.into_iter().map(ModifiedFileEntry::from).collect();
-            app.uncommitted_files = items.clone();
             app.dirty_files = items;
         }
         if let Ok(commits) = repo.get_commit_history(Some(50)) {
