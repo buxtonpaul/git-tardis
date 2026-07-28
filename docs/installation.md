@@ -82,12 +82,13 @@ git-tardis --version
 
 ## 3. Neovim Plugin Setup (`git-tardis.nvim`)
 
-Git-tardis includes a native Neovim plugin launcher that opens Git-tardis in a floating terminal window with automatic editor position and theme synchronization over Neovim RPC (`$NVIM`).
+Git-tardis includes a native Neovim plugin launcher (`git-tardis.nvim`) that opens Git-tardis in a floating terminal window with automatic editor position and theme synchronization over Neovim RPC (`$NVIM`).
 
-### Installation with `lazy.nvim`
+For complete plugin documentation, options, and commands, see [docs/neovim-plugin.md](neovim-plugin.md).
 
-Add the following plugin specification to your Neovim configuration:
+### Quick Setup by Plugin Manager
 
+#### `lazy.nvim`
 ```lua
 {
   "buxtonpaul/git-tardis",
@@ -99,6 +100,25 @@ Add the following plugin specification to your Neovim configuration:
     require("git-tardis").setup({})
   end,
 }
+```
+
+#### `pckr.nvim`
+```lua
+require("pckr").add({
+  {
+    "buxtonpaul/git-tardis",
+    config = function()
+      require("git-tardis").setup()
+    end,
+  },
+})
+```
+
+#### `vim-plug`
+```vim
+Plug 'buxtonpaul/git-tardis'
+
+lua require('git-tardis').setup()
 ```
 
 ### User Commands

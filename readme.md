@@ -39,7 +39,7 @@ Verify installation:
 git-tardis --version
 ```
 
-For full installation details including Neovim setup (`git-tardis.nvim`), see [docs/installation.md](docs/installation.md).
+For full installation details and Neovim plugin configuration (`git-tardis.nvim`), see [docs/installation.md](docs/installation.md) and [docs/neovim-plugin.md](docs/neovim-plugin.md).
 
 ---
 
