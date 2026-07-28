@@ -26,6 +26,11 @@ impl GitRepo {
         path: &str,
         max_count: Option<usize>,
     ) -> Result<Vec<CommitInfo>, GitError> {
+        let clean_path = path.trim().trim_start_matches("./");
+        if clean_path.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let mut args = vec![
             "log",
             "--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b%x1e",
@@ -36,7 +41,7 @@ impl GitRepo {
             args.push(&max_count_str);
         }
         args.push("--");
-        args.push(path);
+        args.push(clean_path);
 
         let output = self.run_git(&args)?;
         parse_commit_log(&output)
@@ -50,7 +55,15 @@ impl GitRepo {
         end_line: usize,
         max_count: Option<usize>,
     ) -> Result<Vec<CommitInfo>, GitError> {
-        let line_range_arg = format!("-L{},{}:{}", start_line, end_line, path);
+        let clean_path = path.trim().trim_start_matches("./");
+        if clean_path.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let start = start_line.max(1);
+        let end = end_line.max(start);
+
+        let line_range_arg = format!("-L{},{}:{}", start, end, clean_path);
         let mut args = vec![
             "log",
             "--no-patch",

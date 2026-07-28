@@ -191,6 +191,48 @@ fn test_line_commits() {
 }
 
 #[test]
+fn test_line_commits_zero_start_line_and_path_cleaning() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(
+        &repo,
+        "file with spaces.txt",
+        "line 1\nline 2\nline 3\n",
+        "Initial commit with spaces in filename",
+    );
+    commit_file(
+        &repo,
+        "file with spaces.txt",
+        "line 1\nline 2 updated\nline 3\n",
+        "Update line 2 in filename with spaces",
+    );
+
+    // 1. Zero start_line should be clamped to 1 and succeed without Git error
+    let zero_line_history = repo
+        .get_line_commits("file with spaces.txt", 0, 2, None)
+        .expect("Zero start_line should be clamped to 1 and succeed");
+    assert_eq!(zero_line_history.len(), 2);
+
+    // 2. Relative prefix "./" and trailing spaces should be cleaned
+    let cleaned_path_history = repo
+        .get_line_commits("  ./file with spaces.txt  ", 2, 2, None)
+        .expect("Path with ./ prefix and whitespace should be cleaned and succeed");
+    assert_eq!(cleaned_path_history.len(), 2);
+    assert_eq!(
+        cleaned_path_history[0].summary,
+        "Update line 2 in filename with spaces"
+    );
+    assert_eq!(
+        cleaned_path_history[1].summary,
+        "Initial commit with spaces in filename"
+    );
+
+    // 3. Empty or whitespace-only paths should return Ok(Vec::new()) without executing git log
+    let empty_path_res = repo.get_line_commits("   ", 1, 5, None).unwrap();
+    assert!(empty_path_res.is_empty());
+}
+
+#[test]
 fn test_diff_and_file_at_commit() {
     let (_dir, repo) = setup_test_repo();
 

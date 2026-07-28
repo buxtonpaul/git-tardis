@@ -23,8 +23,9 @@ impl GitRepo {
         let line_range_arg;
 
         if let Some(start) = start_line {
-            let end = end_line.unwrap_or(start);
-            line_range_arg = format!("-L{},{}", start, end);
+            let clamped_start = start.max(1);
+            let end = end_line.unwrap_or(clamped_start).max(clamped_start);
+            line_range_arg = format!("-L{},{}", clamped_start, end);
             args.push(&line_range_arg);
         }
 
