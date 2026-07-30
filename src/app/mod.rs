@@ -826,7 +826,6 @@ impl AppState {
         if let Some(repo) = self.repo() {
             if let Ok(files) = repo.list_files() {
                 self.files = files;
-                self.expand_all_folders();
             }
             if let Ok(statuses) = repo.get_status() {
                 let items: Vec<ModifiedFileEntry> =
@@ -1780,6 +1779,7 @@ impl AppState {
             current_dir.push_str(part);
             self.expanded_folders.insert(current_dir.clone());
         }
+        self.invalidate_visible_file_items_cache();
 
         self.active_file = Some(clean_path.clone());
 
