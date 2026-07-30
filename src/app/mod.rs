@@ -865,22 +865,24 @@ impl AppState {
         };
 
         let stdin = std::io::stdin();
-        let result = crate::rebase::execute_edit_here(&self.repo_path, &target_hash, stdin.lock());
+        let result = crate::rebase::execute_edit_here(
+            &self.repo_path,
+            &target_hash,
+            stdin.lock(),
+            &mut self.in_alternate_screen,
+        );
 
         match &result {
             crate::rebase::RebaseResult::Completed => {
-                self.in_alternate_screen = true;
                 let short_hash = &target_hash[..7.min(target_hash.len())];
                 self.status_message = format!("Successfully edited commit {}", short_hash);
                 self.reload_repo_data();
             }
             crate::rebase::RebaseResult::Aborted => {
-                self.in_alternate_screen = true;
                 self.status_message = "Rebase aborted. Restored repository state.".to_string();
                 self.reload_repo_data();
             }
             crate::rebase::RebaseResult::ConflictExited(opt_msg) => {
-                self.in_alternate_screen = false;
                 self.exit_message = opt_msg.clone();
                 self.running = false;
             }

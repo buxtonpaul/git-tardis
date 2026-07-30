@@ -201,6 +201,7 @@ pub fn execute_edit_here<R: BufRead>(
     repo_path: &Path,
     target_hash: &str,
     mut input: R,
+    in_alternate_screen: &mut bool,
 ) -> RebaseResult {
     if is_rebase_in_progress(repo_path) {
         return RebaseResult::Error(
@@ -231,6 +232,7 @@ pub fn execute_edit_here<R: BufRead>(
         let _ = disable_raw_mode();
         let _ = execute!(stdout, LeaveAlternateScreen, Show);
     }
+    *in_alternate_screen = false;
 
     println!("\n================================================================================");
     println!("Git-tardis: Pausing timeline at commit {}", target_hash);
@@ -257,6 +259,7 @@ pub fn execute_edit_here<R: BufRead>(
                 let _ = enable_raw_mode();
                 let _ = execute!(stdout, EnterAlternateScreen, Hide);
             }
+            *in_alternate_screen = true;
             return RebaseResult::Error(format!("Failed to execute git rebase: {}", e));
         }
     };
@@ -341,6 +344,7 @@ pub fn execute_edit_here<R: BufRead>(
                         let _ = enable_raw_mode();
                         let _ = execute!(stdout, EnterAlternateScreen, Hide);
                     }
+                    *in_alternate_screen = true;
                     return RebaseResult::Aborted;
                 }
             }
@@ -369,6 +373,7 @@ pub fn execute_edit_here<R: BufRead>(
                 let _ = enable_raw_mode();
                 let _ = execute!(stdout, EnterAlternateScreen, Hide);
             }
+            *in_alternate_screen = true;
             return RebaseResult::Aborted;
         }
     }
@@ -378,6 +383,7 @@ pub fn execute_edit_here<R: BufRead>(
         let _ = enable_raw_mode();
         let _ = execute!(stdout, EnterAlternateScreen, Hide);
     }
+    *in_alternate_screen = true;
 
     RebaseResult::Completed
 }

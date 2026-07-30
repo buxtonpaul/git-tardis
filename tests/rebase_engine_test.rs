@@ -140,9 +140,11 @@ fn test_execute_edit_here_successful_rebase() {
     );
 
     let input = Cursor::new("1\n");
-    let res = execute_edit_here(repo_path, &h2, input);
+    let mut in_alt_screen = true;
+    let res = execute_edit_here(repo_path, &h2, input, &mut in_alt_screen);
 
     assert_eq!(res, RebaseResult::Completed);
+    assert!(in_alt_screen, "Screen state should be restored to true on completed rebase");
     assert!(!is_rebase_in_progress(repo_path));
 
     // Verify file_b.txt content after rebase completion
@@ -165,10 +167,12 @@ fn test_uncommitted_changes_exits_session_and_preserves_rebase() {
     );
 
     let input = Cursor::new("1\n");
-    let res = execute_edit_here(repo_path, &h2, input);
+    let mut in_alt_screen = true;
+    let res = execute_edit_here(repo_path, &h2, input, &mut in_alt_screen);
 
     // Git-tardis must exit with ConflictExited to preserve uncommitted work
     assert!(matches!(res, RebaseResult::ConflictExited(_)));
+    assert!(!in_alt_screen, "Screen state should be false on conflict exit");
     assert!(
         is_rebase_in_progress(repo_path),
         "Active rebase session must be preserved on exit"
@@ -195,7 +199,8 @@ fn test_startup_rebase_protection_choice_exit() {
 
     // Leave repo mid-rebase
     std::env::set_var("GIT_TARDIS_TEST_CMD", "echo 'Uncommitted' > file_b.txt");
-    let _ = execute_edit_here(repo_path, &h2, Cursor::new("1\n"));
+    let mut dummy_alt = true;
+    let _ = execute_edit_here(repo_path, &h2, Cursor::new("1\n"), &mut dummy_alt);
     assert!(is_rebase_in_progress(repo_path));
 
     // Test startup check with Choice [1] (Exit)
@@ -224,7 +229,8 @@ fn test_startup_rebase_protection_choice_abort() {
 
     // Leave repo mid-rebase
     std::env::set_var("GIT_TARDIS_TEST_CMD", "echo 'Uncommitted' > file_b.txt");
-    let _ = execute_edit_here(repo_path, &h2, Cursor::new("1\n"));
+    let mut dummy_alt = true;
+    let _ = execute_edit_here(repo_path, &h2, Cursor::new("1\n"), &mut dummy_alt);
     assert!(is_rebase_in_progress(repo_path));
 
     // Test startup check with Choice [2] (Abort)
@@ -291,9 +297,11 @@ fn test_execute_edit_here_conflict_and_exit_choice() {
 
     // Choice 1: Exit Git-tardis to resolve in terminal
     let input = Cursor::new("1\n");
-    let res = execute_edit_here(repo_path, &h1, input);
+    let mut in_alt_screen = true;
+    let res = execute_edit_here(repo_path, &h1, input, &mut in_alt_screen);
 
     assert!(matches!(res, RebaseResult::ConflictExited(_)));
+    assert!(!in_alt_screen, "Screen state should be false on conflict exit choice");
     assert!(
         is_rebase_in_progress(repo_path),
         "Rebase should remain active for conflict resolution"
@@ -360,9 +368,11 @@ fn test_execute_edit_here_conflict_and_abort_choice() {
 
     // Choice 2: Abort rebase
     let input = Cursor::new("2\n");
-    let res = execute_edit_here(repo_path, &h1, input);
+    let mut in_alt_screen = true;
+    let res = execute_edit_here(repo_path, &h1, input, &mut in_alt_screen);
 
     assert_eq!(res, RebaseResult::Aborted);
+    assert!(in_alt_screen, "Screen state should be restored to true on rebase abort");
     assert!(
         !is_rebase_in_progress(repo_path),
         "Rebase should be aborted and state restored"
