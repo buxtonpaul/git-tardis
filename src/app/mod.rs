@@ -464,6 +464,7 @@ impl AppState {
     pub fn set_sidebar_view(&mut self, view: SidebarView) {
         self.sidebar_view = view;
         if view == SidebarView::CommitTimeline {
+            self.timeline_filter = TimelineFilter::All;
             self.update_candidate_commits();
         }
         self.load_currently_selected_file();
@@ -919,7 +920,7 @@ impl AppState {
                     statuses.into_iter().map(ModifiedFileEntry::from).collect();
                 self.dirty_files = items;
             }
-            if let Ok(commits) = repo.get_commit_history(Some(50)) {
+            if let Ok(commits) = repo.get_commit_history(None) {
                 self.commits = commits.into_iter().map(CommitSummary::from).collect();
             }
             self.load_currently_selected_file();
@@ -929,17 +930,17 @@ impl AppState {
     pub fn trigger_edit_here(&mut self) -> crate::rebase::RebaseResult {
         let target_hash = match if self.sidebar_view == SidebarView::CommitTimeline {
             if self.timeline_filter == TimelineFilter::All {
-                self.commits
+                self.display_commits()
                     .get(self.commit_selected)
                     .map(|c| c.hash.clone())
             } else {
-                self.candidate_commits
+                self.display_candidate_commits()
                     .get(self.candidate_selected)
                     .map(|c| c.hash.clone())
             }
         } else {
             self.selected_commit_hash.clone().or_else(|| {
-                self.commits
+                self.display_commits()
                     .get(self.commit_selected)
                     .map(|c| c.hash.clone())
             })
