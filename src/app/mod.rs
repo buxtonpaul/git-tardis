@@ -1097,6 +1097,12 @@ impl AppState {
             }
         }
 
+        if self.last_loaded_file != clean_path {
+            if crate::ui::markdown::is_markdown_file(self.last_loaded_file.as_deref()) {
+                self.render_markdown_formatted = false;
+            }
+        }
+
         self.last_loaded_file = clean_path;
         self.last_loaded_commit = target_commit;
         self.last_loaded_view_mode = Some(target_view_mode);
