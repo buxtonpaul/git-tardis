@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileTreeNode {
@@ -18,8 +18,17 @@ pub struct VisibleFileItem {
     pub depth: usize,
 }
 
+#[derive(Default)]
+struct InternalNode {
+    is_dir: bool,
+    children: BTreeMap<String, InternalNode>,
+}
+
 pub fn build_file_tree(files: &[String]) -> Vec<FileTreeNode> {
-    let mut root_children: Vec<FileTreeNode> = Vec::new();
+    let mut root = InternalNode {
+        is_dir: true,
+        children: BTreeMap::new(),
+    };
 
     for path in files {
         let clean_path = path.trim_start_matches("./");
@@ -28,81 +37,62 @@ pub fn build_file_tree(files: &[String]) -> Vec<FileTreeNode> {
         }
 
         let parts: Vec<&str> = clean_path.split('/').collect();
-        add_path_components(&mut root_children, &parts, 0, "");
+        let mut curr = &mut root;
+        for (i, part) in parts.iter().enumerate() {
+            let is_last = i == parts.len() - 1;
+            curr = curr
+                .children
+                .entry((*part).to_string())
+                .or_insert_with(|| InternalNode {
+                    is_dir: !is_last,
+                    children: BTreeMap::new(),
+                });
+            if !is_last {
+                curr.is_dir = true;
+            }
+        }
     }
 
-    sort_nodes(&mut root_children);
-    root_children
+    convert_internal_nodes(&root.children, 0, "")
 }
 
-fn add_path_components(
-    nodes: &mut Vec<FileTreeNode>,
-    parts: &[&str],
+fn convert_internal_nodes(
+    children: &BTreeMap<String, InternalNode>,
     depth: usize,
     parent_path: &str,
-) {
-    if parts.is_empty() {
-        return;
-    }
+) -> Vec<FileTreeNode> {
+    let mut dirs = Vec::new();
+    let mut files = Vec::new();
 
-    let current_name = parts[0];
-    let is_leaf = parts.len() == 1;
+    for (name, node) in children {
+        let current_path = if parent_path.is_empty() {
+            name.clone()
+        } else {
+            format!("{}/{}", parent_path, name)
+        };
 
-    let current_path = if parent_path.is_empty() {
-        current_name.to_string()
-    } else {
-        format!("{}/{}", parent_path, current_name)
-    };
-
-    if is_leaf {
-        if !nodes.iter().any(|n| n.name == current_name && !n.is_dir) {
-            nodes.push(FileTreeNode {
-                name: current_name.to_string(),
+        if node.is_dir {
+            let child_nodes = convert_internal_nodes(&node.children, depth + 1, &current_path);
+            dirs.push(FileTreeNode {
+                name: name.clone(),
+                path: current_path,
+                is_dir: true,
+                depth,
+                children: child_nodes,
+            });
+        } else {
+            files.push(FileTreeNode {
+                name: name.clone(),
                 path: current_path,
                 is_dir: false,
                 depth,
                 children: Vec::new(),
             });
         }
-    } else {
-        let pos = nodes
-            .iter()
-            .position(|n| n.name == current_name && n.is_dir);
-        let dir_idx = match pos {
-            Some(idx) => idx,
-            None => {
-                nodes.push(FileTreeNode {
-                    name: current_name.to_string(),
-                    path: current_path.clone(),
-                    is_dir: true,
-                    depth,
-                    children: Vec::new(),
-                });
-                nodes.len() - 1
-            }
-        };
-
-        add_path_components(
-            &mut nodes[dir_idx].children,
-            &parts[1..],
-            depth + 1,
-            &current_path,
-        );
     }
-}
 
-fn sort_nodes(nodes: &mut Vec<FileTreeNode>) {
-    nodes.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-        (true, false) => std::cmp::Ordering::Less,
-        (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.cmp(&b.name),
-    });
-
-    for node in nodes {
-        if node.is_dir {
-            sort_nodes(&mut node.children);
-        }
-    }
+    dirs.extend(files);
+    dirs
 }
 
 pub fn flatten_file_tree(

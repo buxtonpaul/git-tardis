@@ -72,6 +72,29 @@ impl NavigationMode {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CandidateQueryKey {
+    Commit {
+        commit_hash: Option<String>,
+    },
+    File {
+        file_path: String,
+        commit_hash: Option<String>,
+    },
+    LineRange {
+        file_path: String,
+        start_line: usize,
+        end_line: usize,
+        commit_hash: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ModifiedStatusCache {
+    pub file_statuses: std::collections::HashMap<String, String>,
+    pub dir_prefixes: std::collections::HashSet<String>,
+}
+
 pub struct AppState {
     pub repo_path: PathBuf,
     pub repo: Option<GitRepo>,
@@ -133,6 +156,18 @@ pub struct AppState {
     pub search_match_index: usize,
     pub symbol_matches: Vec<crate::treesitter::SymbolItem>,
     pub symbol_selected: usize,
+
+    file_tree_cache: std::cell::RefCell<Option<Vec<crate::app::file_tree::FileTreeNode>>>,
+    visible_file_items_cache:
+        std::cell::RefCell<Option<Vec<crate::app::file_tree::VisibleFileItem>>>,
+    modified_status_cache: std::cell::RefCell<Option<ModifiedStatusCache>>,
+    pub candidate_commits_cache:
+        std::collections::HashMap<CandidateQueryKey, Vec<CommitSummary>>,
+    pub last_candidate_query_key: Option<CandidateQueryKey>,
+    pub diff_highlights_cache: std::collections::HashMap<
+        (String, Option<String>),
+        std::collections::HashMap<usize, crate::git::DiffLineType>,
+    >,
 }
 
 impl AppState {
@@ -208,12 +243,45 @@ impl AppState {
             search_match_index: 0,
             symbol_matches: Vec::new(),
             symbol_selected: 0,
+
+            file_tree_cache: std::cell::RefCell::new(None),
+            visible_file_items_cache: std::cell::RefCell::new(None),
+            modified_status_cache: std::cell::RefCell::new(None),
+            candidate_commits_cache: std::collections::HashMap::new(),
+            last_candidate_query_key: None,
+            diff_highlights_cache: std::collections::HashMap::new(),
         }
     }
 
+    pub fn invalidate_file_tree_cache(&self) {
+        *self.file_tree_cache.borrow_mut() = None;
+        *self.visible_file_items_cache.borrow_mut() = None;
+    }
+
+    pub fn invalidate_visible_file_items_cache(&self) {
+        *self.visible_file_items_cache.borrow_mut() = None;
+    }
+
+    pub fn invalidate_modified_status_cache(&self) {
+        *self.modified_status_cache.borrow_mut() = None;
+    }
+
     pub fn visible_file_items(&self) -> Vec<VisibleFileItem> {
-        let tree = build_file_tree(&self.files);
-        flatten_file_tree(&tree, &self.expanded_folders)
+        if self.visible_file_items_cache.borrow().is_none() {
+            if self.file_tree_cache.borrow().is_none() {
+                let tree = build_file_tree(&self.files);
+                *self.file_tree_cache.borrow_mut() = Some(tree);
+            }
+            if let Some(tree) = self.file_tree_cache.borrow().as_ref() {
+                let visible = flatten_file_tree(tree, &self.expanded_folders);
+                *self.visible_file_items_cache.borrow_mut() = Some(visible);
+            }
+        }
+        self.visible_file_items_cache
+            .borrow()
+            .as_ref()
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn active_modified_files(&self) -> &[ModifiedFileEntry] {
@@ -224,53 +292,94 @@ impl AppState {
         }
     }
 
+    fn ensure_modified_status_cache(&self) {
+        if self.modified_status_cache.borrow().is_none() {
+            let mut file_statuses = std::collections::HashMap::new();
+            let mut dir_prefixes = std::collections::HashSet::new();
+
+            for e in self.active_modified_files() {
+                let clean_entry = e.path.trim_start_matches("./");
+                let status = if e.status.trim().is_empty() {
+                    "M".to_string()
+                } else {
+                    e.status.trim().to_string()
+                };
+                file_statuses.insert(clean_entry.to_string(), status);
+
+                let parts: Vec<&str> = clean_entry.split('/').collect();
+                for i in 1..parts.len() {
+                    let dir_path = parts[..i].join("/");
+                    dir_prefixes.insert(dir_path);
+                }
+            }
+
+            *self.modified_status_cache.borrow_mut() = Some(ModifiedStatusCache {
+                file_statuses,
+                dir_prefixes,
+            });
+        }
+    }
+
     pub fn file_modified_status(&self, path: &str) -> Option<&str> {
         let clean_target = path.trim_start_matches("./");
-        let entries = self.active_modified_files();
-        entries.iter().find_map(|e| {
-            let clean_entry = e.path.trim_start_matches("./");
-            if clean_entry == clean_target {
-                let status = e.status.trim();
-                if status.is_empty() {
-                    Some("M")
-                } else {
-                    Some(status)
-                }
-            } else {
-                None
+        self.ensure_modified_status_cache();
+        let cache = self.modified_status_cache.borrow();
+        if let Some(c) = cache.as_ref() {
+            if let Some(status) = c.file_statuses.get(clean_target) {
+                return match status.as_str() {
+                    "M" => Some("M"),
+                    "A" => Some("A"),
+                    "D" => Some("D"),
+                    "R" => Some("R"),
+                    "C" => Some("C"),
+                    "U" => Some("U"),
+                    "?" | "??" => Some("??"),
+                    _ => self.active_modified_files().iter().find_map(|e| {
+                        if e.path.trim_start_matches("./") == clean_target {
+                            Some(e.status.trim())
+                        } else {
+                            None
+                        }
+                    }),
+                };
             }
-        })
+        }
+        None
     }
 
     pub fn dir_has_modified_files(&self, dir_path: &str) -> bool {
-        let clean_dir = dir_path.trim_start_matches("./");
+        let clean_dir = dir_path.trim_start_matches("./").trim_end_matches('/');
         if clean_dir.is_empty() {
             return false;
         }
-        let prefix = if clean_dir.ends_with('/') {
-            clean_dir.to_string()
+        self.ensure_modified_status_cache();
+        let cache = self.modified_status_cache.borrow();
+        if let Some(c) = cache.as_ref() {
+            c.dir_prefixes.contains(clean_dir)
         } else {
-            format!("{}/", clean_dir)
-        };
-
-        let entries = self.active_modified_files();
-        entries.iter().any(|e| {
-            let clean_entry = e.path.trim_start_matches("./");
-            clean_entry.starts_with(&prefix)
-        })
+            false
+        }
     }
 
     pub fn expand_all_folders(&mut self) {
-        let tree = build_file_tree(&self.files);
-        collect_all_dir_paths(&tree, &mut self.expanded_folders);
+        if self.file_tree_cache.borrow().is_none() {
+            let tree = build_file_tree(&self.files);
+            *self.file_tree_cache.borrow_mut() = Some(tree);
+        }
+        if let Some(tree) = self.file_tree_cache.borrow().as_ref() {
+            collect_all_dir_paths(tree, &mut self.expanded_folders);
+        }
+        self.invalidate_visible_file_items_cache();
     }
 
     pub fn expand_folder(&mut self, path: &str) {
         self.expanded_folders.insert(path.to_string());
+        self.invalidate_visible_file_items_cache();
     }
 
     pub fn collapse_folder(&mut self, path: &str) {
         self.expanded_folders.remove(path);
+        self.invalidate_visible_file_items_cache();
     }
 
     pub fn toggle_folder(&mut self, path: &str) {
@@ -279,6 +388,7 @@ impl AppState {
         } else {
             self.expanded_folders.insert(path.to_string());
         }
+        self.invalidate_visible_file_items_cache();
     }
 
     pub fn move_to_parent_folder(&mut self) {
@@ -329,6 +439,9 @@ impl AppState {
             ActivePanel::Sidebar => ActivePanel::CodeViewer,
             ActivePanel::CodeViewer => ActivePanel::Sidebar,
         };
+        if self.active_panel == ActivePanel::CodeViewer {
+            self.update_current_line_blame();
+        }
         self.status_message = format!("Switched focus to {:?}", self.active_panel);
     }
 
@@ -468,53 +581,117 @@ impl AppState {
 
     pub fn update_candidate_commits(&mut self) {
         self.ensure_repo();
+        let cur_file = self.current_file_path();
+
+        let key = match self.nav_mode {
+            NavigationMode::Commit => CandidateQueryKey::Commit {
+                commit_hash: self.selected_commit_hash.clone(),
+            },
+            NavigationMode::File => {
+                if let Some(f) = cur_file.clone() {
+                    CandidateQueryKey::File {
+                        file_path: f,
+                        commit_hash: self.selected_commit_hash.clone(),
+                    }
+                } else {
+                    CandidateQueryKey::Commit {
+                        commit_hash: self.selected_commit_hash.clone(),
+                    }
+                }
+            }
+            NavigationMode::Function => {
+                if let Some(f) = cur_file.clone() {
+                    let source_code = self.code_lines.join("\n");
+                    let effective_line = self.effective_cursor_line();
+                    let range = crate::treesitter::scope::find_enclosing_function_range(
+                        &self.grammar_registry,
+                        &f,
+                        &source_code,
+                        effective_line,
+                    );
+                    if let Ok(Some((start_l, end_l))) = range {
+                        CandidateQueryKey::LineRange {
+                            file_path: f,
+                            start_line: start_l,
+                            end_line: end_l,
+                            commit_hash: self.selected_commit_hash.clone(),
+                        }
+                    } else {
+                        CandidateQueryKey::File {
+                            file_path: f,
+                            commit_hash: self.selected_commit_hash.clone(),
+                        }
+                    }
+                } else {
+                    CandidateQueryKey::Commit {
+                        commit_hash: self.selected_commit_hash.clone(),
+                    }
+                }
+            }
+            NavigationMode::Line => {
+                if let Some(f) = cur_file.clone() {
+                    let effective_line = self.effective_cursor_line();
+                    CandidateQueryKey::LineRange {
+                        file_path: f,
+                        start_line: effective_line,
+                        end_line: effective_line,
+                        commit_hash: self.selected_commit_hash.clone(),
+                    }
+                } else {
+                    CandidateQueryKey::Commit {
+                        commit_hash: self.selected_commit_hash.clone(),
+                    }
+                }
+            }
+        };
+
+        if self.last_candidate_query_key.as_ref() == Some(&key) {
+            return;
+        }
+
+        if let Some(cached_commits) = self.candidate_commits_cache.get(&key) {
+            self.candidate_commits = cached_commits.clone();
+            self.last_candidate_query_key = Some(key);
+
+            if let Some(hash) = &self.selected_commit_hash {
+                if let Some(idx) = self
+                    .candidate_commits
+                    .iter()
+                    .position(|c| c.matches_hash(hash))
+                {
+                    self.candidate_selected = idx;
+                } else {
+                    self.candidate_selected = 0;
+                }
+            } else {
+                self.candidate_selected = 0;
+            }
+            return;
+        }
+
         let repo = match self.repo() {
             Some(r) => r,
             None => return,
         };
 
-        let cur_file = self.current_file_path();
-
-        let commits_res = match self.nav_mode {
-            NavigationMode::Commit => repo.get_commit_history(None),
-            NavigationMode::File => {
-                if let Some(f) = &cur_file {
-                    repo.get_file_commits(f, None)
-                } else {
-                    repo.get_commit_history(None)
-                }
-            }
-            NavigationMode::Function => {
-                if let Some(f) = &cur_file {
-                    let source_code = self.code_lines.join("\n");
-                    let effective_line = self.effective_cursor_line();
-                    let range = crate::treesitter::scope::find_enclosing_function_range(
-                        &self.grammar_registry,
-                        f,
-                        &source_code,
-                        effective_line,
-                    );
-                    if let Ok(Some((start_l, end_l))) = range {
-                        repo.get_line_commits(f, start_l, end_l, None)
-                    } else {
-                        repo.get_file_commits(f, None)
-                    }
-                } else {
-                    repo.get_commit_history(None)
-                }
-            }
-            NavigationMode::Line => {
-                if let Some(f) = &cur_file {
-                    let effective_line = self.effective_cursor_line();
-                    repo.get_line_commits(f, effective_line, effective_line, None)
-                } else {
-                    repo.get_commit_history(None)
-                }
-            }
+        let commits_res = match &key {
+            CandidateQueryKey::Commit { .. } => repo.get_commit_history(None),
+            CandidateQueryKey::File { file_path, .. } => repo.get_file_commits(file_path, None),
+            CandidateQueryKey::LineRange {
+                file_path,
+                start_line,
+                end_line,
+                ..
+            } => repo.get_line_commits(file_path, *start_line, *end_line, None),
         };
 
         if let Ok(commits) = commits_res {
-            self.candidate_commits = commits.into_iter().map(CommitSummary::from).collect();
+            let candidate_list: Vec<CommitSummary> =
+                commits.into_iter().map(CommitSummary::from).collect();
+            self.candidate_commits_cache
+                .insert(key.clone(), candidate_list.clone());
+            self.candidate_commits = candidate_list;
+            self.last_candidate_query_key = Some(key);
 
             if let Some(hash) = &self.selected_commit_hash {
                 if let Some(idx) = self
@@ -544,6 +721,9 @@ impl AppState {
     pub fn update_state_for_commit_hash(&mut self, hash: String) {
         self.ensure_repo();
         self.selected_commit_hash = Some(hash.clone());
+        self.invalidate_modified_status_cache();
+        self.invalidate_file_tree_cache();
+        self.last_candidate_query_key = None;
 
         // Sync commit_selected index in self.commits if hash exists in commit history
         if let Some(idx) = self.commits.iter().position(|c| c.matches_hash(&hash)) {
@@ -630,9 +810,19 @@ impl AppState {
 
     pub fn clear_blame_cache(&mut self) {
         self.blame_cache.clear();
+        self.candidate_commits_cache.clear();
+        self.last_candidate_query_key = None;
+        self.diff_highlights_cache.clear();
+        self.invalidate_file_tree_cache();
+        self.invalidate_modified_status_cache();
     }
 
     pub fn reload_repo_data(&mut self) {
+        self.invalidate_file_tree_cache();
+        self.invalidate_modified_status_cache();
+        self.candidate_commits_cache.clear();
+        self.last_candidate_query_key = None;
+        self.diff_highlights_cache.clear();
         if let Some(repo) = self.repo() {
             if let Ok(files) = repo.list_files() {
                 self.files = files;
@@ -934,6 +1124,22 @@ impl AppState {
             None => return,
         };
 
+        let clean_cur_file = cur_file.trim_start_matches("./");
+
+        let is_modified = self.active_modified_files().iter().any(|e| {
+            e.path.trim_start_matches("./") == clean_cur_file
+        });
+
+        if !is_modified {
+            return;
+        }
+
+        let key = (clean_cur_file.to_string(), self.selected_commit_hash.clone());
+        if let Some(cached) = self.diff_highlights_cache.get(&key) {
+            self.file_diff_highlights = cached.clone();
+            return;
+        }
+
         let diff_res = if let Some(repo) = self.repo() {
             if let Some(hash) = &self.selected_commit_hash {
                 repo.get_diff_file(hash, &cur_file)
@@ -945,7 +1151,9 @@ impl AppState {
         };
 
         if let Ok(diff_text) = diff_res {
-            self.file_diff_highlights = crate::git::diff_parser::parse_file_diff_hunks(&diff_text);
+            let highlights = crate::git::diff_parser::parse_file_diff_hunks(&diff_text);
+            self.diff_highlights_cache.insert(key, highlights.clone());
+            self.file_diff_highlights = highlights;
         }
     }
 
