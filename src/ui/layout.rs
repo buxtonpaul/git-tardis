@@ -268,8 +268,12 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 .collect();
             let list = List::new(items).block(sidebar_block);
             let mut list_state = ListState::default();
+            let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
             if !visible_items.is_empty() {
                 list_state.select(Some(sel_index));
+                if height > 0 {
+                    *list_state.offset_mut() = sel_index.saturating_sub(height / 2);
+                }
             }
             frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
         }
@@ -301,8 +305,12 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 .collect();
             let list = List::new(items).block(sidebar_block);
             let mut list_state = ListState::default();
+            let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
             if !list_items.is_empty() {
                 list_state.select(Some(safe_sel));
+                if height > 0 {
+                    *list_state.offset_mut() = safe_sel.saturating_sub(height / 2);
+                }
             }
             frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
         }
@@ -353,8 +361,12 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     .collect();
                 let list = List::new(items).block(sidebar_block);
                 let mut list_state = ListState::default();
+                let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
                 if !state.commits.is_empty() {
                     list_state.select(Some(safe_sel));
+                    if height > 0 {
+                        *list_state.offset_mut() = safe_sel.saturating_sub(height / 2);
+                    }
                 }
                 frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
             } else {
@@ -391,8 +403,12 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     .collect();
                 let list = List::new(items).block(sidebar_block);
                 let mut list_state = ListState::default();
+                let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
                 if !state.candidate_commits.is_empty() {
                     list_state.select(Some(safe_sel));
+                    if height > 0 {
+                        *list_state.offset_mut() = safe_sel.saturating_sub(height / 2);
+                    }
                 }
                 frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
             }

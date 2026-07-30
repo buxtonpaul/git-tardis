@@ -565,3 +565,51 @@ fn test_sidebar_commit_list_views_bracket_navigation() {
     app.dispatch_action(Action::JumpNextAuto);
     assert_eq!(app.selected_commit_hash, None);
 }
+
+#[test]
+fn test_sidebar_commit_timeline_autoscroll_tracks_target_candidate() {
+    let (_dir, repo) = setup_test_repo();
+
+    for i in 1..=20 {
+        commit_file(
+            &repo,
+            "main.rs",
+            &format!("fn main() {{ println!(\"v{}\"); }}\n", i),
+            &format!("Commit {}", i),
+        );
+    }
+
+    let mut app = AppState::new(repo.work_dir().to_path_buf());
+    app.active_file = Some("main.rs".to_string());
+    if let Some(r) = app.repo() {
+        if let Ok(commits) = r.get_commit_history(Some(50)) {
+            app.commits = commits.into_iter().map(Into::into).collect();
+        }
+    }
+    app.set_sidebar_view(git_tardis::app::SidebarView::CommitTimeline);
+    app.timeline_filter = git_tardis::app::TimelineFilter::All;
+
+    // Initially at HEAD (Commit 20), commit_selected = 0
+    assert_eq!(app.commit_selected, 0);
+
+    // Jump to Commit 5 (which is index 15 in reverse-chronological order)
+    let c5_hash = app.commits.iter().find(|c| c.message == "Commit 5").unwrap().hash.clone();
+    app.update_state_for_commit_hash(c5_hash);
+
+    assert_eq!(app.commit_selected, 15);
+
+    // Draw UI with small backend height (30x12)
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    let backend = TestBackend::new(80, 12);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal.draw(|f| git_tardis::ui::render(f, &mut app)).unwrap();
+    let buffer_str = format!("{:?}", terminal.backend().buffer());
+
+    // Verify Commit 5 is automatically scrolled into view in the rendered sidebar
+    assert!(
+        buffer_str.contains("Commit 5"),
+        "Commit 5 should be automatically scrolled into view in the sidebar"
+    );
+}
