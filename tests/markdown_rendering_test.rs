@@ -57,13 +57,14 @@ fn test_markdown_formatted_rendering_and_toggle_action() {
         .status_message
         .contains("Markdown formatted rendering: ENABLED"));
 
-    // 4. Navigating away from Markdown file (e.g. to a non-markdown file) resets formatted rendering to false
+    // 4. Navigating away from Markdown file to a non-markdown file resets render_markdown_formatted to false
     app.last_loaded_file = Some("README.md".to_string());
     app.open_file_at_line("src/main.rs", None);
     assert!(!app.render_markdown_formatted);
 
-    // 5. Navigating to another Markdown file keeps formatted rendering disabled until user explicitly toggles 'M'
+    // 5. Navigating to another Markdown file defaults to formatted rendering enabled (render_markdown_formatted = true)
     app.files.push("docs/guide.md".to_string());
+    app.invalidate_file_tree_cache();
     app.open_file_at_line("docs/guide.md", None);
-    assert!(!app.render_markdown_formatted);
+    assert!(app.render_markdown_formatted);
 }

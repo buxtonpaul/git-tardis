@@ -1098,9 +1098,8 @@ impl AppState {
         }
 
         if self.last_loaded_file != clean_path {
-            if crate::ui::markdown::is_markdown_file(self.last_loaded_file.as_deref()) {
-                self.render_markdown_formatted = false;
-            }
+            self.render_markdown_formatted =
+                crate::ui::markdown::is_markdown_file(clean_path.as_deref());
         }
 
         self.last_loaded_file = clean_path;
