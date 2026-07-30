@@ -283,6 +283,7 @@ fn test_timeline_navigator_direct_api() {
             current_commit_hash: None,
             scope: JumpScope::File,
             direction: JumpDirection::Previous,
+            cached_commits: None,
         })
         .unwrap()
         .unwrap();

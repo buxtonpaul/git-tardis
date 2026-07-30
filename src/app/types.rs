@@ -128,6 +128,20 @@ impl From<&crate::git::CommitInfo> for CommitSummary {
     }
 }
 
+impl From<&CommitSummary> for crate::git::CommitInfo {
+    fn from(s: &CommitSummary) -> Self {
+        Self {
+            hash: s.hash.clone(),
+            short_hash: s.short_hash.clone(),
+            author: String::new(),
+            email: String::new(),
+            date: String::new(),
+            summary: s.message.clone(),
+            body: String::new(),
+        }
+    }
+}
+
 impl From<(String, String)> for CommitSummary {
     fn from((hash, message): (String, String)) -> Self {
         let short_hash = if hash.len() >= 7 {

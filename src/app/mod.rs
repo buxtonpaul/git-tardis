@@ -142,6 +142,10 @@ pub struct AppState {
     pub current_line_blame: Option<BlameLine>,
     pub file_diff_highlights: std::collections::HashMap<usize, crate::git::DiffLineType>,
     pub blame_cache: std::collections::HashMap<(String, Option<String>), Vec<BlameLine>>,
+    pub single_line_blame_cache: std::collections::HashMap<
+        (String, Option<String>, usize),
+        Option<BlameLine>,
+    >,
     pub blame_subprocess_count: usize,
     pub last_loaded_file: Option<String>,
     pub last_loaded_commit: Option<String>,
@@ -168,6 +172,14 @@ pub struct AppState {
         (String, Option<String>),
         std::collections::HashMap<usize, crate::git::DiffLineType>,
     >,
+    pub file_content_cache:
+        std::collections::HashMap<(String, String), Vec<String>>,
+    pub diff_between_cache: std::collections::HashMap<
+        (Option<String>, Option<String>, String),
+        String,
+    >,
+    pub modified_files_cache:
+        std::collections::HashMap<String, Vec<ModifiedFileEntry>>,
 }
 
 impl AppState {
@@ -229,6 +241,7 @@ impl AppState {
             current_line_blame: None,
             file_diff_highlights: std::collections::HashMap::new(),
             blame_cache: std::collections::HashMap::new(),
+            single_line_blame_cache: std::collections::HashMap::new(),
             blame_subprocess_count: 0,
             last_loaded_file: None,
             last_loaded_commit: None,
@@ -250,6 +263,9 @@ impl AppState {
             candidate_commits_cache: std::collections::HashMap::new(),
             last_candidate_query_key: None,
             diff_highlights_cache: std::collections::HashMap::new(),
+            file_content_cache: std::collections::HashMap::new(),
+            diff_between_cache: std::collections::HashMap::new(),
+            modified_files_cache: std::collections::HashMap::new(),
         }
     }
 
@@ -723,7 +739,6 @@ impl AppState {
         self.selected_commit_hash = Some(hash.clone());
         self.invalidate_modified_status_cache();
         self.invalidate_file_tree_cache();
-        self.last_candidate_query_key = None;
 
         // Sync commit_selected index in self.commits if hash exists in commit history
         if let Some(idx) = self.commits.iter().position(|c| c.matches_hash(&hash)) {
@@ -738,13 +753,30 @@ impl AppState {
             self.candidate_selected = idx;
         }
 
-        // Fetch modified files for this commit
-        if let Some(repo) = self.repo() {
+        // Fetch modified files for this commit (cached)
+        if let Some(cached_mod_files) = self.modified_files_cache.get(&hash) {
+            self.modified_files = cached_mod_files.clone();
+            if let Some(cur_file) = self.current_file_path() {
+                if let Some(f_idx) = self
+                    .modified_files
+                    .iter()
+                    .position(|item| item.path == cur_file)
+                {
+                    self.modified_selected = f_idx;
+                } else {
+                    self.modified_selected = 0;
+                }
+            } else {
+                self.modified_selected = 0;
+            }
+        } else if let Some(repo) = self.repo() {
             if let Ok(commit_files) = repo.get_commit_files(&hash) {
-                self.modified_files = commit_files
+                let entries: Vec<ModifiedFileEntry> = commit_files
                     .into_iter()
                     .map(ModifiedFileEntry::from)
                     .collect();
+                self.modified_files_cache.insert(hash.clone(), entries.clone());
+                self.modified_files = entries;
 
                 // If current file is in modified_files, set modified_selected to match it
                 if let Some(cur_file) = self.current_file_path() {
@@ -761,7 +793,9 @@ impl AppState {
                     self.modified_selected = 0;
                 }
             }
+        }
 
+        if let Some(repo) = self.repo() {
             // Update file explorer list for this target commit
             if let Ok(tree_files) = repo.list_files_at_commit(&hash) {
                 self.files = tree_files;
@@ -810,9 +844,13 @@ impl AppState {
 
     pub fn clear_blame_cache(&mut self) {
         self.blame_cache.clear();
+        self.single_line_blame_cache.clear();
         self.candidate_commits_cache.clear();
         self.last_candidate_query_key = None;
         self.diff_highlights_cache.clear();
+        self.file_content_cache.clear();
+        self.diff_between_cache.clear();
+        self.modified_files_cache.clear();
         self.invalidate_file_tree_cache();
         self.invalidate_modified_status_cache();
     }
@@ -823,6 +861,9 @@ impl AppState {
         self.candidate_commits_cache.clear();
         self.last_candidate_query_key = None;
         self.diff_highlights_cache.clear();
+        self.file_content_cache.clear();
+        self.diff_between_cache.clear();
+        self.modified_files_cache.clear();
         if let Some(repo) = self.repo() {
             if let Ok(files) = repo.list_files() {
                 self.files = files;
@@ -1047,18 +1088,29 @@ impl AppState {
 
             if let Some(hash) = &target_commit {
                 let short_hash = &hash[..7.min(hash.len())];
-                if let Some(repo) = self.repo() {
+                let content_key = (file_path_str.clone(), hash.clone());
+                if let Some(cached_lines) = self.file_content_cache.get(&content_key) {
+                    loaded_lines = Some(cached_lines.clone());
+                    self.status_message =
+                        format!("Loaded {} at commit {}", file_path_str, short_hash);
+                } else if let Some(repo) = self.repo() {
                     match repo.get_file_at_commit(hash, &file_path_str) {
                         Ok(content) => {
-                            loaded_lines = Some(content.lines().map(|s| s.to_string()).collect());
+                            let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                            self.file_content_cache
+                                .insert(content_key, lines.clone());
+                            loaded_lines = Some(lines);
                             self.status_message =
                                 format!("Loaded {} at commit {}", file_path_str, short_hash);
                         }
                         Err(_) => {
-                            loaded_lines = Some(vec![format!(
+                            let err_lines = vec![format!(
                                 "File '{}' did not exist at commit {}",
                                 file_path_str, short_hash
-                            )]);
+                            )];
+                            self.file_content_cache
+                                .insert(content_key, err_lines.clone());
+                            loaded_lines = Some(err_lines);
                             self.status_message = format!(
                                 "File '{}' did not exist at commit {}",
                                 file_path_str, short_hash
@@ -1092,17 +1144,28 @@ impl AppState {
                     self.cursor_line = new_cursor;
                     self.code_scroll_offset = max_scroll;
                 } else if let Some(path) = &clean_path {
-                    let diff_text = self
-                        .repo()
-                        .and_then(|repo| {
-                            repo.get_diff_between(
-                                self.last_loaded_commit.as_deref(),
-                                target_commit.as_deref(),
-                                path,
-                            )
-                            .ok()
-                        })
-                        .unwrap_or_default();
+                    let diff_key = (
+                        self.last_loaded_commit.clone(),
+                        target_commit.clone(),
+                        path.clone(),
+                    );
+                    let diff_text = if let Some(cached_diff) = self.diff_between_cache.get(&diff_key) {
+                        cached_diff.clone()
+                    } else {
+                        let fetched = self
+                            .repo()
+                            .and_then(|repo| {
+                                repo.get_diff_between(
+                                    self.last_loaded_commit.as_deref(),
+                                    target_commit.as_deref(),
+                                    path,
+                                )
+                                .ok()
+                            })
+                            .unwrap_or_default();
+                        self.diff_between_cache.insert(diff_key, fetched.clone());
+                        fetched
+                    };
 
                     let mapped_line =
                         crate::git::diff_parser::map_line_number(&diff_text, old_cursor_line);
@@ -1249,6 +1312,22 @@ impl AppState {
             }
         };
 
+        let cached_info: Vec<crate::git::CommitInfo> = match scope {
+            crate::timeline::JumpScope::Commit => {
+                self.commits.iter().map(|c| c.into()).collect()
+            }
+            crate::timeline::JumpScope::File => {
+                self.candidate_commits.iter().map(|c| c.into()).collect()
+            }
+            _ => Vec::new(),
+        };
+
+        let cached_commits_opt = if !cached_info.is_empty() {
+            Some(cached_info.as_slice())
+        } else {
+            None
+        };
+
         let effective_line = self.effective_cursor_line();
         let navigator = crate::timeline::TimelineNavigator::new();
         self.ensure_repo();
@@ -1262,6 +1341,7 @@ impl AppState {
             current_commit_hash: self.selected_commit_hash.as_deref(),
             scope,
             direction,
+            cached_commits: cached_commits_opt,
         }) {
             Ok(Some(result)) => {
                 let status_msg = result.status_message;

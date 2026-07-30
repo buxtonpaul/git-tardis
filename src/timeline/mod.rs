@@ -28,6 +28,7 @@ pub struct TimelineJumpRequest<'a> {
     pub current_commit_hash: Option<&'a str>,
     pub scope: JumpScope,
     pub direction: JumpDirection,
+    pub cached_commits: Option<&'a [crate::git::CommitInfo]>,
 }
 
 #[derive(Debug, Clone)]
@@ -74,49 +75,100 @@ impl TimelineNavigator {
         let mut function_range: Option<(usize, usize)> = None;
 
         // 1. Fetch relevant commit history for the requested scope
-        let commits = match req.scope {
-            JumpScope::Commit => repo
-                .get_commit_history(None)
-                .map_err(|e| format!("Failed to get commit history: {:?}", e))?,
-            JumpScope::File => repo.get_file_commits(req.file_path, None).map_err(|e| {
-                format!("Failed to get file commits for {}: {:?}", req.file_path, e)
-            })?,
-            JumpScope::Function => {
-                let range = find_enclosing_function_range(
-                    &self.grammar_registry,
-                    req.file_path,
-                    &source_code,
-                    req.cursor_line,
-                )
-                .map_err(|e| format!("Tree-sitter error: {}", e))?;
+        let commits = if let Some(cached) = req.cached_commits {
+            if !cached.is_empty() {
+                cached.to_vec()
+            } else {
+                match req.scope {
+                    JumpScope::Commit => repo
+                        .get_commit_history(None)
+                        .map_err(|e| format!("Failed to get commit history: {:?}", e))?,
+                    JumpScope::File => repo.get_file_commits(req.file_path, None).map_err(|e| {
+                        format!("Failed to get file commits for {}: {:?}", req.file_path, e)
+                    })?,
+                    JumpScope::Function => {
+                        let range = find_enclosing_function_range(
+                            &self.grammar_registry,
+                            req.file_path,
+                            &source_code,
+                            req.cursor_line,
+                        )
+                        .map_err(|e| format!("Tree-sitter error: {}", e))?;
 
-                match range {
-                    Some((start_l, end_l)) => {
-                        function_range = Some((start_l, end_l));
-                        repo.get_line_commits(req.file_path, start_l, end_l, None)
-                            .map_err(|e| {
-                                format!(
-                                    "Failed to get function commits ({}-{}) for {}: {:?}",
-                                    start_l, end_l, req.file_path, e
-                                )
-                            })?
+                        match range {
+                            Some((start_l, end_l)) => {
+                                function_range = Some((start_l, end_l));
+                                repo.get_line_commits(req.file_path, start_l, end_l, None)
+                                    .map_err(|e| {
+                                        format!(
+                                            "Failed to get function commits ({}-{}) for {}: {:?}",
+                                            start_l, end_l, req.file_path, e
+                                        )
+                                    })?
+                            }
+                            None => {
+                                return Err(format!(
+                                    "No enclosing function found at line {} in {}",
+                                    req.cursor_line, req.file_path
+                                ));
+                            }
+                        }
                     }
-                    None => {
-                        return Err(format!(
-                            "No enclosing function found at line {} in {}",
-                            req.cursor_line, req.file_path
-                        ));
-                    }
+                    JumpScope::Line => repo
+                        .get_line_commits(req.file_path, req.cursor_line, req.cursor_line, None)
+                        .map_err(|e| {
+                            format!(
+                                "Failed to get line commits for line {} in {}: {:?}",
+                                req.cursor_line, req.file_path, e
+                            )
+                        })?,
                 }
             }
-            JumpScope::Line => repo
-                .get_line_commits(req.file_path, req.cursor_line, req.cursor_line, None)
-                .map_err(|e| {
-                    format!(
-                        "Failed to get line commits for line {} in {}: {:?}",
-                        req.cursor_line, req.file_path, e
-                    )
+        } else {
+            match req.scope {
+                JumpScope::Commit => repo
+                    .get_commit_history(None)
+                    .map_err(|e| format!("Failed to get commit history: {:?}", e))?,
+                JumpScope::File => repo.get_file_commits(req.file_path, None).map_err(|e| {
+                    format!("Failed to get file commits for {}: {:?}", req.file_path, e)
                 })?,
+                JumpScope::Function => {
+                    let range = find_enclosing_function_range(
+                        &self.grammar_registry,
+                        req.file_path,
+                        &source_code,
+                        req.cursor_line,
+                    )
+                    .map_err(|e| format!("Tree-sitter error: {}", e))?;
+
+                    match range {
+                        Some((start_l, end_l)) => {
+                            function_range = Some((start_l, end_l));
+                            repo.get_line_commits(req.file_path, start_l, end_l, None)
+                                .map_err(|e| {
+                                    format!(
+                                        "Failed to get function commits ({}-{}) for {}: {:?}",
+                                        start_l, end_l, req.file_path, e
+                                    )
+                                })?
+                        }
+                        None => {
+                            return Err(format!(
+                                "No enclosing function found at line {} in {}",
+                                req.cursor_line, req.file_path
+                            ));
+                        }
+                    }
+                }
+                JumpScope::Line => repo
+                    .get_line_commits(req.file_path, req.cursor_line, req.cursor_line, None)
+                    .map_err(|e| {
+                        format!(
+                            "Failed to get line commits for line {} in {}: {:?}",
+                            req.cursor_line, req.file_path, e
+                        )
+                    })?,
+            }
         };
 
         if commits.is_empty() {
