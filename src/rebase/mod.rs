@@ -93,23 +93,8 @@ pub fn get_rebase_upstream(dir: &Path, commit_hash: &str) -> Result<String, Stri
 
 /// Resolve the exact Git directory for a repository path
 pub fn get_git_dir(repo_path: &Path) -> PathBuf {
-    let output = Command::new("git")
-        .current_dir(repo_path)
-        .args(["rev-parse", "--git-dir"])
-        .output();
-
-    if let Ok(out) = output {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            let p = Path::new(&s);
-            if p.is_absolute() {
-                return p.to_path_buf();
-            } else {
-                return repo_path.join(p);
-            }
-        }
-    }
-    repo_path.join(".git")
+    let repo = crate::git::GitRepo::new(repo_path);
+    repo.git_dir().unwrap_or_else(|_| repo_path.join(".git"))
 }
 
 /// Check if a rebase is currently in progress in the repository

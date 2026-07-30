@@ -386,3 +386,15 @@ fn test_list_files_at_commit() {
         .expect("list_files_at_commit c2 failed");
     assert_eq!(files_c2, vec!["alpha.txt", "beta.txt"]);
 }
+
+#[test]
+fn test_git_dir_resolution() {
+    let (_dir, repo) = setup_test_repo();
+
+    let git_dir = repo.git_dir().expect("git_dir resolution failed");
+    assert!(git_dir.exists());
+    assert!(git_dir.join("HEAD").exists());
+
+    let rebase_git_dir = git_tardis::rebase::get_git_dir(repo.work_dir());
+    assert_eq!(git_dir, rebase_git_dir);
+}

@@ -43,6 +43,18 @@ impl GitRepo {
         Ok(PathBuf::from(output.trim()))
     }
 
+    /// Resolve the exact Git directory (`.git` directory or worktree git path) for the repository.
+    pub fn git_dir(&self) -> Result<PathBuf, GitError> {
+        let output = self.run_git(&["rev-parse", "--git-dir"])?;
+        let trimmed = output.trim();
+        let path = Path::new(trimmed);
+        if path.is_absolute() {
+            Ok(path.to_path_buf())
+        } else {
+            Ok(self.work_dir.join(path))
+        }
+    }
+
     /// Check if the directory is inside a valid Git repository.
     pub fn check_is_repo(&self) -> Result<(), GitError> {
         let output = self.run_git(&["rev-parse", "--is-inside-work-tree"])?;
