@@ -85,15 +85,11 @@ fn test_file_mode_timeline_navigation() {
     app.load_currently_selected_file();
     assert_eq!(app.code_lines, vec!["fn main() { println!(\"v3\"); }"]);
 
-    // Jump PREV -> C3 ("v3")
+    // Jump PREV -> C2 ("v2") on clean working directory
     app.dispatch_action(Action::JumpPrevFile);
     assert!(app.selected_commit_hash.is_some());
-    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v3\"); }"]);
-    assert!(app.status_message.contains("Jumped [PREVIOUS] (FILE)"));
-
-    // Jump PREV -> C2 ("v2")
-    app.dispatch_action(Action::JumpPrevFile);
     assert_eq!(app.code_lines, vec!["fn main() { println!(\"v2\"); }"]);
+    assert!(app.status_message.contains("Jumped [PREVIOUS] (FILE)"));
 
     // Jump PREV -> C1 ("v1")
     app.dispatch_action(Action::JumpPrevFile);
@@ -169,11 +165,7 @@ fn target() {
     // Set cursor on line 6 (inside `target()`)
     app.cursor_line = 6;
 
-    // Step PREV in Function mode -> should hit C4 (target v3)
-    app.dispatch_action(Action::JumpPrevFunction);
-    assert!(app.status_message.contains("C4: Modify target to v3"));
-
-    // Step PREV in Function mode -> should hit C3 (target v2)
+    // Step PREV in Function mode on clean working tree -> jumps from HEAD (C4) directly to C3 (target v2)
     app.dispatch_action(Action::JumpPrevFunction);
     assert!(app.status_message.contains("C3: Modify target to v2"));
 
@@ -202,7 +194,7 @@ fn test_line_mode_timeline_navigation() {
     app.files = vec!["data.txt".to_string()];
     app.load_currently_selected_file();
 
-    // Cursor on line 1 -> jumps should only see C2 and C1
+    // Cursor on line 1 -> jumps on clean repo skip C3 (line 3 only) and jump directly to C2 (modify line 1)
     app.cursor_line = 1;
 
     app.dispatch_action(Action::JumpPrevLine);
@@ -214,12 +206,9 @@ fn test_line_mode_timeline_navigation() {
     app.dispatch_action(Action::JumpPrevLine);
     assert!(app.status_message.contains("Already at oldest commit"));
 
-    // Now test line 3 on working copy
+    // Now test line 3 on clean working copy -> line 3 in HEAD is C3, so JumpPrevLine jumps directly to C1
     app.selected_commit_hash = None;
     app.cursor_line = 3;
-
-    app.dispatch_action(Action::JumpPrevLine);
-    assert!(app.status_message.contains("C3: Modify line 3"));
 
     app.dispatch_action(Action::JumpPrevLine);
     assert!(app.status_message.contains("C1: Initial data"));
@@ -281,15 +270,17 @@ fn test_timeline_navigator_direct_api() {
             source_lines: &["v2".to_string()],
             cursor_line: 1,
             current_commit_hash: None,
+            head_commit_hash: None,
             scope: JumpScope::File,
             direction: JumpDirection::Previous,
             cached_commits: None,
+            is_dirty: false,
         })
         .unwrap()
         .unwrap();
 
-    assert_eq!(res.code_lines, vec!["v2"]);
-    assert_eq!(res.commit_summary, "Commit 2");
+    assert_eq!(res.code_lines, vec!["v1"]);
+    assert_eq!(res.commit_summary, "Commit 1");
 }
 
 #[test]
@@ -310,11 +301,7 @@ fn test_commit_mode_timeline_navigation_and_fallback() {
     // Initially viewing first.txt
     assert_eq!(app.code_lines, vec!["first file v2"]);
 
-    // Jump PREV in Commit mode -> C3 ("Modify first")
-    app.dispatch_action(Action::JumpPrevCommit);
-    assert_eq!(app.code_lines, vec!["first file v2"]);
-
-    // Jump PREV in Commit mode -> C2 ("Add second", which did not modify first.txt, but first.txt existed)
+    // Jump PREV in Commit mode on clean repo -> jumps directly to C2 ("Add second", first.txt was v1)
     app.dispatch_action(Action::JumpPrevCommit);
     assert_eq!(app.code_lines, vec!["first file v1"]);
 
@@ -460,29 +447,25 @@ fn test_code_viewer_focused_navigation_updates_commit_and_code() {
     app.toggle_panel_focus();
     assert_eq!(app.active_panel, git_tardis::app::ActivePanel::CodeViewer);
 
-    // Jump PREV from CodeViewer scope
+    // Jump PREV from CodeViewer scope on clean repo -> jumps directly to Commit 2 ("v2")
     app.dispatch_action(Action::JumpPrevFile);
 
     // Check that CodeViewer content, selected_commit_hash, AND Tab 3 commit_selected are updated!
     assert!(app.selected_commit_hash.is_some());
-    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v3\"); }"]);
-    assert_eq!(app.commit_selected, 0); // Index 0 in commits list is Commit 3
+    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v2\"); }"]);
+    assert_eq!(app.commit_selected, 1); // Index 1 in commits list is Commit 2
     assert_eq!(app.modified_files.len(), 1);
     assert!(app.modified_files[0].path.contains("main.rs"));
 
-    // Jump PREV again from CodeViewer scope
-    app.dispatch_action(Action::JumpPrevFile);
-    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v2\"); }"]);
-    assert_eq!(app.commit_selected, 1); // Index 1 in commits list is Commit 2
-
-    // Jump PREV again from CodeViewer scope
+    // Jump PREV again from CodeViewer scope -> Commit 1 ("v1")
     app.dispatch_action(Action::JumpPrevFile);
     assert_eq!(app.code_lines, vec!["fn main() { println!(\"v1\"); }"]);
     assert_eq!(app.commit_selected, 2); // Index 2 in commits list is Commit 1
 
-    // Jump NEXT back towards HEAD
+    // Jump NEXT back towards HEAD -> Commit 2 ("v2")
     app.dispatch_action(Action::JumpNextFile);
     assert_eq!(app.code_lines, vec!["fn main() { println!(\"v2\"); }"]);
+    assert_eq!(app.commit_selected, 1);
     assert_eq!(app.commit_selected, 1);
 }
 
@@ -532,37 +515,30 @@ fn test_sidebar_commit_list_views_bracket_navigation() {
     assert!(app.candidate_commits[0].message.contains("C3"));
     assert!(app.candidate_commits[1].message.contains("C1"));
 
-    // Press '[' in Sidebar -> JumpPrevAuto in File mode -> jumps to C3
+    // Press '[' in Sidebar on clean repo -> JumpPrevAuto in File mode -> jumps directly to C1 (skipping C2 because C2 didn't touch file_a.txt)
     app.dispatch_action(Action::JumpPrevAuto);
     assert!(app.selected_commit_hash.is_some());
-    assert_eq!(app.candidate_selected, 0); // Pointing to C3
-    assert_eq!(app.code_lines, vec!["v2"]);
-
-    // Press '[' again -> jumps to C1 (skipping C2 because C2 didn't touch file_a.txt)
-    app.dispatch_action(Action::JumpPrevAuto);
     assert_eq!(app.candidate_selected, 1); // Pointing to C1
     assert_eq!(app.code_lines, vec!["v1"]);
 
     // Press ']' -> jumps back to C3
     app.dispatch_action(Action::JumpNextAuto);
     assert_eq!(app.candidate_selected, 0); // Pointing to C3
+    assert_eq!(app.selected_commit_hash, Some(app.candidate_commits[0].hash.clone()));
     assert_eq!(app.code_lines, vec!["v2"]);
 
-    // Press ']' -> reset time travel (return to working directory)
+    // Press ']' again -> reset time travel (return to working copy)
     app.dispatch_action(Action::JumpNextAuto);
     assert_eq!(app.selected_commit_hash, None);
 
-    // 2. In CommitTimeline view in Sidebar with File mode still active
+    // 2. In CommitTimeline view in Sidebar with File mode still active on clean repo
     app.set_sidebar_view(git_tardis::app::SidebarView::CommitTimeline);
-    app.dispatch_action(Action::JumpPrevAuto);
-    assert_eq!(app.code_lines, vec!["v2"]);
-
-    // Press '[' again -> jumps to C1 according to active File nav_mode
     app.dispatch_action(Action::JumpPrevAuto);
     assert_eq!(app.code_lines, vec!["v1"]);
 
     // Reset back
     app.dispatch_action(Action::JumpNextAuto);
+    assert_eq!(app.selected_commit_hash, Some(app.candidate_commits[0].hash.clone()));
     app.dispatch_action(Action::JumpNextAuto);
     assert_eq!(app.selected_commit_hash, None);
 }
@@ -626,17 +602,23 @@ fn test_unified_dirty_and_head_commit_timeline_navigation() {
     app.reload_repo_data();
 
     // 1. Clean working directory state (no dirty files):
-    // display_commits() starts directly with HEAD (Commit 2)
-    let clean_commits = app.display_commits();
-    assert_eq!(clean_commits.len(), 2);
-    assert_eq!(clean_commits[0].message, "Commit 2");
-    assert_eq!(clean_commits[1].message, "Commit 1");
+    // Pressing '[' ONCE jumps directly from HEAD (Commit 2) to HEAD~1 (Commit 1)
+    app.set_navigation_mode(git_tardis::app::NavigationMode::File);
+    app.dispatch_action(Action::JumpPrevAuto);
+    assert_eq!(app.selected_commit_hash, Some(app.commits[1].hash.clone()));
+    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v1\"); }"]);
 
-    // Create an uncommitted change in working directory
+    // Reset back to HEAD (JumpNextAuto to Commit 2, then JumpNextAuto to HEAD)
+    app.dispatch_action(Action::JumpNextAuto);
+    assert_eq!(app.selected_commit_hash, Some(app.commits[0].hash.clone()));
+    app.dispatch_action(Action::JumpNextAuto);
+    assert_eq!(app.selected_commit_hash, None);
+
+    // 2. Create an uncommitted change in working directory
     fs::write(repo.work_dir().join("main.rs"), "fn main() { println!(\"dirty\"); }\n").unwrap();
     app.reload_repo_data();
 
-    // 2. Dirty working directory state (uncommitted changes exist):
+    // Dirty working directory state (uncommitted changes exist):
     // display_commits() includes virtual DIRTY entry at index 0, followed by HEAD (Commit 2)
     let dirty_commits = app.display_commits();
     assert_eq!(dirty_commits.len(), 3);
@@ -644,7 +626,20 @@ fn test_unified_dirty_and_head_commit_timeline_navigation() {
     assert_eq!(dirty_commits[1].message, "Commit 2");
     assert_eq!(dirty_commits[2].message, "Commit 1");
 
-    // Focus Sidebar CommitTimeline
+    // Press '[' first time -> transitions from DIRTY (working copy) to HEAD Commit 2
+    app.dispatch_action(Action::JumpPrevAuto);
+    assert_eq!(app.selected_commit_hash, Some(app.commits[0].hash.clone()));
+    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v2\"); }"]);
+
+    // Press '[' second time -> transitions from HEAD Commit 2 to Commit 1
+    app.dispatch_action(Action::JumpPrevAuto);
+    assert_eq!(app.selected_commit_hash, Some(app.commits[1].hash.clone()));
+    assert_eq!(app.code_lines, vec!["fn main() { println!(\"v1\"); }"]);
+
+    // Reset back
+    app.reset_time_travel();
+
+    // 3. Focus Sidebar CommitTimeline navigation
     app.active_panel = git_tardis::app::ActivePanel::Sidebar;
     app.set_sidebar_view(git_tardis::app::SidebarView::CommitTimeline);
     app.timeline_filter = git_tardis::app::TimelineFilter::All;

@@ -1374,9 +1374,11 @@ impl AppState {
             None
         };
 
+        self.ensure_repo();
+        let head_hash = self.commits.first().map(|c| c.hash.clone());
+
         let effective_line = self.effective_cursor_line();
         let navigator = crate::timeline::TimelineNavigator::new();
-        self.ensure_repo();
         let repo_opt = self.repo();
         match navigator.jump(crate::timeline::TimelineJumpRequest {
             repo_path: &self.repo_path,
@@ -1385,9 +1387,11 @@ impl AppState {
             source_lines: &self.code_lines,
             cursor_line: effective_line,
             current_commit_hash: self.selected_commit_hash.as_deref(),
+            head_commit_hash: head_hash.as_deref(),
             scope,
             direction,
             cached_commits: cached_commits_opt,
+            is_dirty: !self.dirty_files.is_empty(),
         }) {
             Ok(Some(result)) => {
                 let status_msg = result.status_message;

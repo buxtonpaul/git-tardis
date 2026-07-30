@@ -26,9 +26,11 @@ pub struct TimelineJumpRequest<'a> {
     pub source_lines: &'a [String],
     pub cursor_line: usize,
     pub current_commit_hash: Option<&'a str>,
+    pub head_commit_hash: Option<&'a str>,
     pub scope: JumpScope,
     pub direction: JumpDirection,
     pub cached_commits: Option<&'a [crate::git::CommitInfo]>,
+    pub is_dirty: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -188,7 +190,30 @@ impl TimelineNavigator {
         // 3. Determine target commit index or return to working copy
         let target_commit_info = match (req.current_commit_hash, current_idx) {
             (None, _) => match req.direction {
-                JumpDirection::Previous => Some(&commits[0]),
+                JumpDirection::Previous => {
+                    if req.is_dirty {
+                        Some(&commits[0])
+                    } else {
+                        let actual_head = match req.head_commit_hash {
+                            Some(h) => Some(h.to_string()),
+                            None => repo
+                                .get_commit_history(Some(1))
+                                .ok()
+                                .and_then(|history| history.into_iter().next().map(|c| c.hash)),
+                        };
+                        let first_is_head = actual_head.map_or(false, |head| {
+                            commits[0].hash == head
+                                || commits[0].short_hash == head
+                                || head.starts_with(&commits[0].short_hash)
+                                || commits[0].short_hash.starts_with(&head)
+                        });
+                        if first_is_head && commits.len() > 1 {
+                            Some(&commits[1])
+                        } else {
+                            Some(&commits[0])
+                        }
+                    }
+                }
                 JumpDirection::Next => {
                     return Err(format!(
                         "Already at latest working state for {}",
