@@ -183,8 +183,8 @@ fn test_sidebar_views_and_commit_queries_comparison() {
 
     // 3. Commit Timeline Selection Comparison
     app.set_sidebar_view(SidebarView::CommitTimeline);
-    app.commit_selected = 1; // "Add lib and update main"
     let target_hash = app.commits[1].hash.clone();
+    app.update_state_for_commit_hash(target_hash.clone());
 
     // Select commit in timeline
     app.dispatch_action(Action::Select);

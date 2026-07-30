@@ -517,20 +517,25 @@ impl AppState {
                     }
                 }
                 SidebarView::CommitTimeline => {
-                    if self.timeline_filter == TimelineFilter::All {
-                        if !self.commits.is_empty() && self.commit_selected + 1 < self.commits.len()
-                        {
-                            self.commit_selected += 1;
-                            self.update_modified_files_for_selected_commit();
+                    let display_list = if self.timeline_filter == TimelineFilter::All {
+                        self.display_commits()
+                    } else {
+                        self.display_candidate_commits()
+                    };
+                    let cur_sel = if self.timeline_filter == TimelineFilter::All {
+                        self.commit_selected
+                    } else {
+                        self.candidate_selected
+                    };
+
+                    if !display_list.is_empty() && cur_sel + 1 < display_list.len() {
+                        let next_item = &display_list[cur_sel + 1];
+                        if next_item.is_dirty() {
+                            self.reset_time_travel();
+                        } else {
+                            self.update_state_for_commit_hash(next_item.hash.clone());
                             self.load_currently_selected_file();
                         }
-                    } else if !self.candidate_commits.is_empty()
-                        && self.candidate_selected + 1 < self.candidate_commits.len()
-                    {
-                        self.candidate_selected += 1;
-                        let hash = self.candidate_commits[self.candidate_selected].hash.clone();
-                        self.update_state_for_commit_hash(hash);
-                        self.load_currently_selected_file();
                     }
                 }
             },
@@ -566,17 +571,25 @@ impl AppState {
                     }
                 }
                 SidebarView::CommitTimeline => {
-                    if self.timeline_filter == TimelineFilter::All {
-                        if self.commit_selected > 0 {
-                            self.commit_selected -= 1;
-                            self.update_modified_files_for_selected_commit();
+                    let display_list = if self.timeline_filter == TimelineFilter::All {
+                        self.display_commits()
+                    } else {
+                        self.display_candidate_commits()
+                    };
+                    let cur_sel = if self.timeline_filter == TimelineFilter::All {
+                        self.commit_selected
+                    } else {
+                        self.candidate_selected
+                    };
+
+                    if cur_sel > 0 && cur_sel < display_list.len() {
+                        let prev_item = &display_list[cur_sel - 1];
+                        if prev_item.is_dirty() {
+                            self.reset_time_travel();
+                        } else {
+                            self.update_state_for_commit_hash(prev_item.hash.clone());
                             self.load_currently_selected_file();
                         }
-                    } else if self.candidate_selected > 0 {
-                        self.candidate_selected -= 1;
-                        let hash = self.candidate_commits[self.candidate_selected].hash.clone();
-                        self.update_state_for_commit_hash(hash);
-                        self.load_currently_selected_file();
                     }
                 }
             },
@@ -725,31 +738,57 @@ impl AppState {
         }
     }
 
+    pub fn display_commits(&self) -> Vec<CommitSummary> {
+        let mut list = Vec::new();
+        if !self.dirty_files.is_empty() {
+            list.push(CommitSummary::dirty());
+        }
+        list.extend(self.commits.clone());
+        list
+    }
+
+    pub fn display_candidate_commits(&self) -> Vec<CommitSummary> {
+        let mut list = Vec::new();
+        if !self.dirty_files.is_empty() {
+            list.push(CommitSummary::dirty());
+        }
+        list.extend(self.candidate_commits.clone());
+        list
+    }
+
     pub fn update_modified_files_for_selected_commit(&mut self) {
-        if self.commits.is_empty() || self.commit_selected >= self.commits.len() {
+        let display_c = self.display_commits();
+        if display_c.is_empty() || self.commit_selected >= display_c.len() {
             return;
         }
 
-        let hash = self.commits[self.commit_selected].hash.clone();
-        self.update_state_for_commit_hash(hash);
+        let selected_item = &display_c[self.commit_selected];
+        if selected_item.is_dirty() {
+            self.reset_time_travel();
+        } else {
+            let hash = selected_item.hash.clone();
+            self.update_state_for_commit_hash(hash);
+        }
     }
 
     pub fn update_state_for_commit_hash(&mut self, hash: String) {
         self.ensure_repo();
+        if hash == DIRTY_COMMIT_HASH || hash == "*DIRTY*" || hash.is_empty() {
+            self.reset_time_travel();
+            return;
+        }
+
         self.selected_commit_hash = Some(hash.clone());
         self.invalidate_modified_status_cache();
         self.invalidate_file_tree_cache();
 
-        // Sync commit_selected index in self.commits if hash exists in commit history
-        if let Some(idx) = self.commits.iter().position(|c| c.matches_hash(&hash)) {
+        let display_c = self.display_commits();
+        if let Some(idx) = display_c.iter().position(|c| c.matches_hash(&hash)) {
             self.commit_selected = idx;
         }
 
-        if let Some(idx) = self
-            .candidate_commits
-            .iter()
-            .position(|c| c.matches_hash(&hash))
-        {
+        let display_cands = self.display_candidate_commits();
+        if let Some(idx) = display_cands.iter().position(|c| c.matches_hash(&hash)) {
             self.candidate_selected = idx;
         }
 
@@ -820,6 +859,8 @@ impl AppState {
     pub fn reset_time_travel(&mut self) {
         self.ensure_repo();
         self.selected_commit_hash = None;
+        self.commit_selected = 0;
+        self.candidate_selected = 0;
         if let Some(repo) = self.repo() {
             if let Ok(wd_files) = repo.list_files() {
                 self.files = wd_files;
@@ -839,7 +880,12 @@ impl AppState {
         }
         self.clear_blame_cache();
         self.load_currently_selected_file();
-        self.status_message = "Exited Time-Travel mode (returned to working directory)".to_string();
+        if !self.dirty_files.is_empty() {
+            self.status_message =
+                "Viewing working directory (uncommitted changes)".to_string();
+        } else {
+            self.status_message = "Viewing HEAD commit".to_string();
+        }
     }
 
     pub fn clear_blame_cache(&mut self) {
@@ -1704,20 +1750,25 @@ impl AppState {
                 }
                 SidebarView::CommitTimeline => {
                     let selected_commit = if self.timeline_filter == TimelineFilter::All {
-                        self.commits.get(self.commit_selected).cloned()
+                        self.display_commits().get(self.commit_selected).cloned()
                     } else {
-                        self.candidate_commits.get(self.candidate_selected).cloned()
+                        self.display_candidate_commits().get(self.candidate_selected).cloned()
                     };
 
                     if let Some(commit) = selected_commit {
-                        self.selected_commit_hash = Some(commit.hash.clone());
-                        self.update_modified_files_for_selected_commit();
-                        self.sidebar_view = SidebarView::ModifiedFiles;
-                        self.load_currently_selected_file();
-                        self.status_message = format!(
-                            "Viewing modified files for commit {} ({})",
-                            commit.short_hash, commit.message
-                        );
+                        if commit.is_dirty() {
+                            self.reset_time_travel();
+                            self.sidebar_view = SidebarView::ModifiedFiles;
+                        } else {
+                            self.selected_commit_hash = Some(commit.hash.clone());
+                            self.update_modified_files_for_selected_commit();
+                            self.sidebar_view = SidebarView::ModifiedFiles;
+                            self.load_currently_selected_file();
+                            self.status_message = format!(
+                                "Viewing modified files for commit {} ({})",
+                                commit.short_hash, commit.message
+                            );
+                        }
                     } else {
                         self.status_message = "No commit selected".to_string();
                     }

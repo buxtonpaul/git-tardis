@@ -614,3 +614,62 @@ fn test_sidebar_commit_timeline_autoscroll_tracks_target_candidate() {
         "Commit 5 should be automatically scrolled into view in the sidebar"
     );
 }
+
+#[test]
+fn test_unified_dirty_and_head_commit_timeline_navigation() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(&repo, "main.rs", "fn main() { println!(\"v1\"); }\n", "Commit 1");
+    commit_file(&repo, "main.rs", "fn main() { println!(\"v2\"); }\n", "Commit 2");
+
+    let mut app = AppState::new(repo.work_dir().to_path_buf());
+    app.reload_repo_data();
+
+    // 1. Clean working directory state (no dirty files):
+    // display_commits() starts directly with HEAD (Commit 2)
+    let clean_commits = app.display_commits();
+    assert_eq!(clean_commits.len(), 2);
+    assert_eq!(clean_commits[0].message, "Commit 2");
+    assert_eq!(clean_commits[1].message, "Commit 1");
+
+    // Create an uncommitted change in working directory
+    fs::write(repo.work_dir().join("main.rs"), "fn main() { println!(\"dirty\"); }\n").unwrap();
+    app.reload_repo_data();
+
+    // 2. Dirty working directory state (uncommitted changes exist):
+    // display_commits() includes virtual DIRTY entry at index 0, followed by HEAD (Commit 2)
+    let dirty_commits = app.display_commits();
+    assert_eq!(dirty_commits.len(), 3);
+    assert!(dirty_commits[0].is_dirty());
+    assert_eq!(dirty_commits[1].message, "Commit 2");
+    assert_eq!(dirty_commits[2].message, "Commit 1");
+
+    // Focus Sidebar CommitTimeline
+    app.active_panel = git_tardis::app::ActivePanel::Sidebar;
+    app.set_sidebar_view(git_tardis::app::SidebarView::CommitTimeline);
+    app.timeline_filter = git_tardis::app::TimelineFilter::All;
+
+    // Initially at DIRTY entry (index 0)
+    assert_eq!(app.commit_selected, 0);
+    assert_eq!(app.selected_commit_hash, None);
+
+    // Move selection down -> transitions from DIRTY (index 0) to HEAD Commit 2 (index 1)
+    app.move_selection_down();
+    assert_eq!(app.commit_selected, 1);
+    assert!(app.selected_commit_hash.is_some());
+    assert_eq!(app.selected_commit_hash, Some(app.commits[0].hash.clone()));
+
+    // Move selection down -> transitions from HEAD (index 1) to Commit 1 (index 2)
+    app.move_selection_down();
+    assert_eq!(app.commit_selected, 2);
+    assert_eq!(app.selected_commit_hash, Some(app.commits[1].hash.clone()));
+
+    // Move selection up -> transitions back to HEAD (index 1)
+    app.move_selection_up();
+    assert_eq!(app.commit_selected, 1);
+
+    // Move selection up -> transitions back to DIRTY (index 0)
+    app.move_selection_up();
+    assert_eq!(app.commit_selected, 0);
+    assert_eq!(app.selected_commit_hash, None);
+}

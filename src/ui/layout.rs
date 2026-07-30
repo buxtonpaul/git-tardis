@@ -315,34 +315,54 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
         }
         SidebarView::CommitTimeline => {
+            let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
             if state.timeline_filter == crate::app::TimelineFilter::All {
-                let safe_sel = if state.commits.is_empty() {
+                let items_list = state.display_commits();
+                let safe_sel = if items_list.is_empty() {
                     0
                 } else {
-                    state.commit_selected.min(state.commits.len() - 1)
+                    state.commit_selected.min(items_list.len() - 1)
                 };
 
-                let items: Vec<ListItem> = state
-                    .commits
+                let items: Vec<ListItem> = items_list
                     .iter()
                     .enumerate()
                     .map(|(i, commit)| {
-                        let is_candidate = state
-                            .candidate_commits
-                            .iter()
-                            .any(|cand| commit.matches_candidate(cand));
+                        let is_candidate = if commit.is_dirty() {
+                            true
+                        } else {
+                            state
+                                .candidate_commits
+                                .iter()
+                                .any(|cand| commit.matches_candidate(cand))
+                        };
 
                         let prefix = if is_candidate { "* " } else { "  " };
-                        let display_hash = if !commit.short_hash.is_empty() {
-                            &commit.short_hash
+                        let display_hash = if commit.is_dirty() {
+                            "*DIRTY*".to_string()
+                        } else if !commit.short_hash.is_empty() {
+                            commit.short_hash.clone()
                         } else if commit.hash.len() >= 7 {
-                            &commit.hash[..7]
+                            commit.hash[..7].to_string()
                         } else {
-                            &commit.hash
+                            commit.hash.clone()
                         };
                         let text = format!("{}{} {}", prefix, display_hash, commit.message);
 
-                        let style = if i == safe_sel && is_sidebar_active {
+                        let style = if commit.is_dirty() {
+                            if i == safe_sel && is_sidebar_active {
+                                Style::default()
+                                    .bg(Color::Blue)
+                                    .fg(Color::Yellow)
+                                    .add_modifier(Modifier::BOLD)
+                            } else if i == safe_sel {
+                                Style::default()
+                                    .fg(Color::Yellow)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                Style::default().fg(Color::Yellow)
+                            }
+                        } else if i == safe_sel && is_sidebar_active {
                             Style::default()
                                 .bg(Color::Blue)
                                 .fg(Color::White)
@@ -361,8 +381,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     .collect();
                 let list = List::new(items).block(sidebar_block);
                 let mut list_state = ListState::default();
-                let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
-                if !state.commits.is_empty() {
+                if !items_list.is_empty() {
                     list_state.select(Some(safe_sel));
                     if height > 0 {
                         *list_state.offset_mut() = safe_sel.saturating_sub(height / 2);
@@ -370,28 +389,43 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 }
                 frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
             } else {
-                let safe_sel = if state.candidate_commits.is_empty() {
+                let items_list = state.display_candidate_commits();
+                let safe_sel = if items_list.is_empty() {
                     0
                 } else {
                     state
                         .candidate_selected
-                        .min(state.candidate_commits.len() - 1)
+                        .min(items_list.len() - 1)
                 };
 
-                let items: Vec<ListItem> = state
-                    .candidate_commits
+                let items: Vec<ListItem> = items_list
                     .iter()
                     .enumerate()
                     .map(|(i, commit)| {
-                        let display_hash = if !commit.short_hash.is_empty() {
-                            &commit.short_hash
+                        let display_hash = if commit.is_dirty() {
+                            "*DIRTY*".to_string()
+                        } else if !commit.short_hash.is_empty() {
+                            commit.short_hash.clone()
                         } else if commit.hash.len() >= 7 {
-                            &commit.hash[..7]
+                            commit.hash[..7].to_string()
                         } else {
-                            &commit.hash
+                            commit.hash.clone()
                         };
                         let text = format!("* {} {}", display_hash, commit.message);
-                        let style = if i == safe_sel && is_sidebar_active {
+                        let style = if commit.is_dirty() {
+                            if i == safe_sel && is_sidebar_active {
+                                Style::default()
+                                    .bg(Color::Blue)
+                                    .fg(Color::Yellow)
+                                    .add_modifier(Modifier::BOLD)
+                            } else if i == safe_sel {
+                                Style::default()
+                                    .fg(Color::Yellow)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                Style::default().fg(Color::Yellow)
+                            }
+                        } else if i == safe_sel && is_sidebar_active {
                             Style::default().bg(Color::Blue).fg(Color::White)
                         } else if i == safe_sel {
                             Style::default().fg(Color::Yellow)
@@ -403,8 +437,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     .collect();
                 let list = List::new(items).block(sidebar_block);
                 let mut list_state = ListState::default();
-                let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
-                if !state.candidate_commits.is_empty() {
+                if !items_list.is_empty() {
                     list_state.select(Some(safe_sel));
                     if height > 0 {
                         *list_state.offset_mut() = safe_sel.saturating_sub(height / 2);

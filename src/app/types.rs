@@ -57,6 +57,8 @@ impl TimelineFilter {
     }
 }
 
+pub const DIRTY_COMMIT_HASH: &str = "DIRTY";
+
 /// Domain representation of a commit summary in navigation lists.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitSummary {
@@ -76,6 +78,18 @@ impl CommitSummary {
             short_hash: short_hash.into(),
             message: message.into(),
         }
+    }
+
+    pub fn dirty() -> Self {
+        Self {
+            hash: DIRTY_COMMIT_HASH.to_string(),
+            short_hash: "*DIRTY*".to_string(),
+            message: "Working Directory (Uncommitted Changes)".to_string(),
+        }
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.hash == DIRTY_COMMIT_HASH || self.short_hash == "*DIRTY*" || self.hash.is_empty()
     }
 
     pub fn matches_hash(&self, target_hash: &str) -> bool {
