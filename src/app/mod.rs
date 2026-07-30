@@ -963,24 +963,55 @@ impl AppState {
                     Ok(diff_text) => {
                         let trimmed = diff_text.trim();
                         if trimmed.is_empty() {
-                            loaded_lines =
-                                Some(vec!["(No diff for working directory / file)".to_string()]);
+                            if let (Some(hash), Some(path)) = (&target_commit, &clean_path) {
+                                if repo.get_file_at_commit(hash, path).is_err() {
+                                    let short_hash = &hash[..7.min(hash.len())];
+                                    let msg = format!(
+                                        "File '{}' did not exist at commit {}",
+                                        path, short_hash
+                                    );
+                                    loaded_lines = Some(vec![msg.clone()]);
+                                    self.status_message = msg;
+                                } else {
+                                    loaded_lines = Some(vec![
+                                        "(No diff for working directory / file)".to_string(),
+                                    ]);
+                                    let short_hash = &hash[..7.min(hash.len())];
+                                    self.status_message = format!(
+                                        "Loaded diff for {} at commit {}",
+                                        path, short_hash
+                                    );
+                                }
+                            } else {
+                                loaded_lines = Some(vec![
+                                    "(No diff for working directory / file)".to_string(),
+                                ]);
+                                if let Some(hash) = &target_commit {
+                                    let short_hash = &hash[..7.min(hash.len())];
+                                    self.status_message =
+                                        format!("Loaded diff for commit {}", short_hash);
+                                } else if let Some(path) = &clean_path {
+                                    self.status_message = format!("Loaded working diff for {}", path);
+                                } else {
+                                    self.status_message = "Loaded working directory diff".to_string();
+                                }
+                            }
                         } else {
                             loaded_lines = Some(diff_text.lines().map(|s| s.to_string()).collect());
-                        }
-                        if let Some(hash) = &target_commit {
-                            let short_hash = &hash[..7.min(hash.len())];
-                            if let Some(path) = &clean_path {
-                                self.status_message =
-                                    format!("Loaded diff for {} at commit {}", path, short_hash);
+                            if let Some(hash) = &target_commit {
+                                let short_hash = &hash[..7.min(hash.len())];
+                                if let Some(path) = &clean_path {
+                                    self.status_message =
+                                        format!("Loaded diff for {} at commit {}", path, short_hash);
+                                } else {
+                                    self.status_message =
+                                        format!("Loaded diff for commit {}", short_hash);
+                                }
+                            } else if let Some(path) = &clean_path {
+                                self.status_message = format!("Loaded working diff for {}", path);
                             } else {
-                                self.status_message =
-                                    format!("Loaded diff for commit {}", short_hash);
+                                self.status_message = "Loaded working directory diff".to_string();
                             }
-                        } else if let Some(path) = &clean_path {
-                            self.status_message = format!("Loaded working diff for {}", path);
-                        } else {
-                            self.status_message = "Loaded working directory diff".to_string();
                         }
                     }
                     Err(_) => {

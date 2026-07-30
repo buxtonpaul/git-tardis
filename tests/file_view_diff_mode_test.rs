@@ -252,3 +252,41 @@ fn test_directory_diff_includes_subdirectories() {
         .iter()
         .any(|l| l.starts_with("+pub fn sub_func()")));
 }
+
+#[test]
+fn test_non_existent_file_status_message_in_diff_view_mode() {
+    let (_dir, repo_path) = setup_test_repo();
+    let mut app = AppState::new(repo_path);
+
+    if let Some(repo) = app.repo() {
+        if let Ok(commits) = repo.get_commit_history(Some(50)) {
+            app.commits = commits.into_iter().map(Into::into).collect();
+        }
+    }
+
+    // setup_test_repo creates commit 1 (initial file.rs) and commit 2 (modifies file.rs).
+    // Let's get commit 1's hash (oldest commit).
+    let commit1_hash = app.commits.last().unwrap().hash.clone();
+    let short_hash = &commit1_hash[..7];
+
+    // Select commit 1 and a file that did not exist at commit 1
+    app.selected_commit_hash = Some(commit1_hash.clone());
+    app.active_file = Some("non_existent.rs".to_string());
+
+    // Switch to Diff view mode and load file
+    app.file_view_mode = FileViewMode::Diff;
+    app.load_currently_selected_file();
+
+    let expected_msg = format!("File 'non_existent.rs' did not exist at commit {}", short_hash);
+
+    // Verify status message and code_lines contain non-existent file message in Diff mode
+    assert_eq!(app.status_message, expected_msg);
+    assert_eq!(app.code_lines, vec![expected_msg.clone()]);
+
+    // Verify terminal rendering displays the message
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|f| render(f, &mut app)).unwrap();
+    let buffer_output = format!("{:?}", terminal.backend().buffer());
+    assert!(buffer_output.contains(&expected_msg));
+}
