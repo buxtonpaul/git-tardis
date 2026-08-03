@@ -679,6 +679,26 @@ impl AppState {
             return;
         }
 
+        if self.selected_commit_hash.is_some() && !self.candidate_commits.is_empty() {
+            if let Some(last_key) = &self.last_candidate_query_key {
+                let same_file_and_mode = match (last_key, &key) {
+                    (
+                        CandidateQueryKey::LineRange { file_path: f1, .. },
+                        CandidateQueryKey::LineRange { file_path: f2, .. },
+                    ) => f1 == f2,
+                    (
+                        CandidateQueryKey::File { file_path: f1, .. },
+                        CandidateQueryKey::File { file_path: f2, .. },
+                    ) => f1 == f2,
+                    (CandidateQueryKey::Commit { .. }, CandidateQueryKey::Commit { .. }) => true,
+                    _ => false,
+                };
+                if same_file_and_mode {
+                    return;
+                }
+            }
+        }
+
         if let Some(cached_commits) = self.candidate_commits_cache.get(&key) {
             self.candidate_commits = cached_commits.clone();
             self.last_candidate_query_key = Some(key);
@@ -1359,11 +1379,13 @@ impl AppState {
             }
         };
 
-        let cached_info: Vec<crate::git::CommitInfo> = match scope {
-            crate::timeline::JumpScope::Commit => {
+        let cached_info: Vec<crate::git::CommitInfo> = match (scope, self.nav_mode) {
+            (crate::timeline::JumpScope::Commit, _) => {
                 self.commits.iter().map(|c| c.into()).collect()
             }
-            crate::timeline::JumpScope::File => {
+            (crate::timeline::JumpScope::File, NavigationMode::File)
+            | (crate::timeline::JumpScope::Function, NavigationMode::Function)
+            | (crate::timeline::JumpScope::Line, NavigationMode::Line) => {
                 self.candidate_commits.iter().map(|c| c.into()).collect()
             }
             _ => Vec::new(),

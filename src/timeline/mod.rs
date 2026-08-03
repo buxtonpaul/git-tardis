@@ -241,10 +241,55 @@ impl TimelineNavigator {
                     }
                 }
             },
-            (Some(_), None) => match req.direction {
-                JumpDirection::Previous => Some(&commits[0]),
-                JumpDirection::Next => None,
-            },
+            (Some(hash), None) => {
+                let full_history = repo.get_commit_history(None).unwrap_or_default();
+                let cur_pos = full_history.iter().position(|c| {
+                    c.hash == hash || c.short_hash == hash || hash.starts_with(&c.short_hash)
+                });
+
+                match cur_pos {
+                    Some(pos) => match req.direction {
+                        JumpDirection::Previous => {
+                            let candidate = commits.iter().find(|cand| {
+                                if let Some(cand_pos) = full_history.iter().position(|c| {
+                                    c.hash == cand.hash
+                                        || c.short_hash == cand.short_hash
+                                        || cand.hash.starts_with(&c.short_hash)
+                                }) {
+                                    cand_pos > pos
+                                } else {
+                                    false
+                                }
+                            });
+                            if let Some(cand) = candidate {
+                                Some(cand)
+                            } else {
+                                return Err(format!(
+                                    "Already at oldest commit in {:?} timeline for {}",
+                                    req.scope, req.file_path
+                                ));
+                            }
+                        }
+                        JumpDirection::Next => {
+                            commits.iter().rev().find(|cand| {
+                                if let Some(cand_pos) = full_history.iter().position(|c| {
+                                    c.hash == cand.hash
+                                        || c.short_hash == cand.short_hash
+                                        || cand.hash.starts_with(&c.short_hash)
+                                }) {
+                                    cand_pos < pos
+                                } else {
+                                    false
+                                }
+                            })
+                        }
+                    },
+                    None => match req.direction {
+                        JumpDirection::Previous => commits.last(),
+                        JumpDirection::Next => None,
+                    },
+                }
+            }
         };
 
         // If stepping NEXT past newest commit -> return None (signals reset to working copy)
