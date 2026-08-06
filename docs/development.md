@@ -80,7 +80,7 @@ The design and architecture of Git-tardis are backed by validated proofs of conc
 | Focus Area | Specification Document | Proof-of-Concept | Key Decision / Outcome |
 | :--- | :--- | :--- | :--- |
 | **Interactive Rebase Engine** | [`research/interactive-rebase-modifications.md`](research/interactive-rebase-modifications.md) | [`research/interactive-rebase-poc/`](../research/interactive-rebase-poc/) | Non-interactive fixup rebases vs `GIT_SEQUENCE_EDITOR` marked edits with TUI suspension loops. |
-| **Conflict Resolution Flow** | [`research/conflict-detection-and-resolution.md`](research/conflict-detection-and-resolution.md) | Integrated in rebase PoC | Fail-fast auto-abort with autostash recovery for inline edits; subshell delegation for edit-here. |
+| **Conflict Resolution Flow** | [`research/conflict-detection-and-resolution.md`](research/conflict-detection-and-resolution.md) | Integrated in rebase PoC | Subshell delegation and conflict abort/resume flow for interactive edit-here rebases. |
 | **Neovim RPC Integration** | [`research/neovim-rpc-terminal-integration.md`](research/neovim-rpc-terminal-integration.md) | [`research/neovim-rpc-poc/`](../research/neovim-rpc-poc/) | Bidirectional socket loop via `nvim-rs` + Tokio, using `BufWipeout` autocommands for cleanup. |
 | **Neovim Lua Plugin Launcher** | [`research/neovim-plugin-launcher-packaging.md`](research/neovim-plugin-launcher-packaging.md) | [`research/neovim-plugin-poc/`](../research/neovim-plugin-poc/) | `git-tardis.nvim` floating window wrapper passing `$NVIM` environment variable. |
 

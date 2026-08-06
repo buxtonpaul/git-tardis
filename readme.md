@@ -10,9 +10,7 @@
 ## ✨ Features
 
 - ⏳ **Line & Function Time Travel**: Jump directly between historical commits affecting the exact line under your cursor or its enclosing function using Tree-sitter AST parsing.
-- ⚡ **Inline Fixup & Interactive Rebase**: 
-  - **Inline Fixup (`i`)**: Make rapid edits to historical commits automatically squashed via Git autosquash rebase.
-  - **Edit Here (`e`)**: Pause an interactive rebase at any historical commit, dropping into a shell/editor to make complex adjustments.
+- ⚡ **Interactive Rebase ("Edit Here")**: Pause an interactive rebase at any historical commit (`e`), dropping into a shell/editor subshell to make adjustments before resuming.
 - 🔍 **Diff & Full File Views**: Seamlessly switch between viewing full historical file contents and Git diffs (`v`).
 - 📁 **File Tree & Modified File Explorers**: Browse the workspace tree at any target commit or view only modified files.
 - 🎨 **Neovim RPC Integration**: Launch as a floating window inside Neovim (`git-tardis.nvim`) with synchronized cursor positions, buffer paths, and inherited color schemes.
@@ -78,7 +76,6 @@ Press `?` inside Git-tardis at any time to display the interactive keybindings h
 | **`v`** | Toggle between **Diff View** and **Full File View** |
 | **`1`** / **`2`** / **`3`** | Focus **Commit Timeline** (`1`), **File Tree** (`2`), or **Modified Files** (`3`) |
 | **`e`** | **Edit Here**: Trigger interactive rebase paused at selected commit |
-| **`i`** | **Inline Fixup**: Edit historical file content with auto-squash |
 | **`?`** | Toggle interactive **Keybindings Help** overlay |
 | **`q`** / **`Esc`** | Quit / Dismiss modal |
 
