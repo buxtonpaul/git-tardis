@@ -83,12 +83,12 @@ Press `?` inside Git-tardis at any time to display the interactive keybindings h
 
 ## 🔌 Neovim Plugin Integration (`git-tardis.nvim`)
 
-Git-tardis integrates natively with Neovim! Run `:GitTardis` or `:GitTardisToggle` to open Git-tardis in a floating terminal window with:
-- Automatic sync of current file path and cursor line
-- Dynamic inheritance of Neovim color schemes
-- Instant jumping back to Neovim buffers on selection
+Git-tardis integrates natively with Neovim! Run `:GitTardis`, `:GitTardisToggle`, or launch mode commands (`:InspectPrevFunctionCommitAtLine`, `:InspectPrevLineCommitAtLine`, `:InspectPrevFileCommitAtLine`, `:InspectPrevCommit`) to open Git-tardis in a floating terminal window with:
+- Automatic sync of current file path, cursor line, and jump mode
+- Dynamic inheritance of active Neovim color schemes
+- Instant keymap integration for line and function history inspection
 
-Check out the [Neovim Plugin Guide](docs/neovim-plugin.md) for setup with `lazy.nvim`, `packer`, or `vim-plug`.
+Check out the [Neovim Plugin Guide](docs/neovim-plugin.md) for full setup and keymaps with `lazy.nvim`, `packer`, or `vim-plug`.
 
 ---
 

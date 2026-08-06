@@ -1,44 +1,49 @@
 # Neovim Plugin Integration: `git-tardis.nvim`
 
-`git-tardis.nvim` is a native Neovim plugin for **Git-tardis** that launches the TUI inside a floating terminal window with automatic cursor position, active buffer path, and color theme synchronization over Neovim RPC (`$NVIM`).
+`git-tardis.nvim` is a native Neovim plugin for **Git-tardis** that launches the TUI inside a floating terminal window with automatic cursor position, active buffer path, launch mode, and color theme synchronization over Neovim RPC (`$NVIM`).
 
 ---
 
-## 1. Plugin Directory Structure
+## 1. Launch Modes
 
-The repository follows standard Neovim plugin conventions:
+Git-tardis supports five distinct launch modes when triggered from Neovim:
 
-```text
-git-tardis/
-├── lua/
-│   └── git-tardis/
-│       ├── init.lua        # Setup entrypoint and user actions
-│       ├── config.lua      # Default settings and option deep-merge
-│       └── terminal.lua    # Floating window and terminal pty lifecycle
-└── plugin/
-    └── git-tardis.lua      # Registers :GitTardis and :GitTardisToggle commands
-```
-
-Because the plugin files reside in the root of the `git-tardis` repository, plugin managers can load `git-tardis` directly as a single repository dependency.
+| Launch Mode | CLI Flag | User Command | Lua API Function | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **Auto / Default** | *(none)* | `:GitTardis` / `:GitTardisToggle` | `tardis.open()` / `tardis.toggle()` | Opens Git-tardis at active file and line in default navigation mode |
+| **Function** | `-m function` | `:InspectPrevFunctionCommitAtLine` | `tardis.inspect_prev_function_commit_at_line()` | Instantly jumps back to the previous commit modifying the enclosing function |
+| **Line** | `-m line` | `:InspectPrevLineCommitAtLine` | `tardis.inspect_prev_line_commit_at_line()` | Instantly jumps back to the previous commit modifying the active cursor line |
+| **File** | `-m file` | `:InspectPrevFileCommitAtLine` | `tardis.inspect_prev_file_commit_at_line()` | Instantly jumps back to the previous commit modifying the current file |
+| **Commit** | `-m commit` | `:InspectPrevCommit` | `tardis.inspect_prev_commit()` | Instantly jumps back to the previous commit in general commit history |
 
 ---
 
-## 2. Installation Across Plugin Managers
-
-### Prerequisites
-- **Neovim** (`>= 0.9.0`)
-- **Git-tardis Binary**: Installed via Homebrew (`brew install git-tardis`) or Cargo (`cargo install --path .`) so `git-tardis` is available in your `$PATH`.
-
----
+## 2. Installation & Keymap Configuration
 
 ### `lazy.nvim` (Recommended)
+
+Configure keybindings in `lazy.nvim` to quickly launch Git-tardis in any mode from your active buffer:
 
 ```lua
 {
   "buxtonpaul/git-tardis",
-  cmd = { "GitTardis", "GitTardisToggle" },
+  cmd = {
+    "GitTardis",
+    "GitTardisToggle",
+    "InspectPrevFunctionCommitAtLine",
+    "InspectPrevLineCommitAtLine",
+    "InspectPrevFileCommitAtLine",
+    "InspectPrevCommit",
+  },
   keys = {
+    -- Toggle default view
     { "<leader>gt", "<cmd>GitTardisToggle<cr>", desc = "Toggle Git-tardis" },
+
+    -- Launch in specific jump modes directly from active cursor line
+    { "<leader>gf", "<cmd>InspectPrevFunctionCommitAtLine<cr>", desc = "Git-tardis: Jump Prev Function Commit" },
+    { "<leader>gl", "<cmd>InspectPrevLineCommitAtLine<cr>", desc = "Git-tardis: Jump Prev Line Commit" },
+    { "<leader>gF", "<cmd>InspectPrevFileCommitAtLine<cr>", desc = "Git-tardis: Jump Prev File Commit" },
+    { "<leader>gc", "<cmd>InspectPrevCommit<cr>", desc = "Git-tardis: Jump Prev Commit" },
   },
   opts = {
     binary_path = "git-tardis", -- path to binary if not in $PATH
@@ -47,9 +52,6 @@ Because the plugin files reside in the root of the `git-tardis` repository, plug
       height = 0.85,
       border = "rounded",
     },
-    keymaps = {
-      toggle = "<leader>gt",
-    },
     sync_theme = true,
   },
 }
@@ -57,45 +59,49 @@ Because the plugin files reside in the root of the `git-tardis` repository, plug
 
 ---
 
-### `pckr.nvim`
+### Vanilla Lua (`init.lua`)
+
+If you configure Neovim using `vim.keymap.set`:
 
 ```lua
-require("pckr").add({
-  {
-    "buxtonpaul/git-tardis",
-    config = function()
-      require("git-tardis").setup({
-        window = { border = "rounded" },
-      })
-    end,
-  },
+local tardis = require("git-tardis")
+
+tardis.setup({
+  window = { border = "rounded" },
+  sync_theme = true,
 })
+
+-- Keymaps via User Commands
+vim.keymap.set("n", "<leader>gt", "<cmd>GitTardisToggle<cr>", { desc = "Toggle Git-tardis" })
+vim.keymap.set("n", "<leader>gf", "<cmd>InspectPrevFunctionCommitAtLine<cr>", { desc = "Git-tardis: Jump Prev Function Commit" })
+vim.keymap.set("n", "<leader>gl", "<cmd>InspectPrevLineCommitAtLine<cr>", { desc = "Git-tardis: Jump Prev Line Commit" })
+vim.keymap.set("n", "<leader>gF", "<cmd>InspectPrevFileCommitAtLine<cr>", { desc = "Git-tardis: Jump Prev File Commit" })
+vim.keymap.set("n", "<leader>gc", "<cmd>InspectPrevCommit<cr>", { desc = "Git-tardis: Jump Prev Commit" })
+
+-- Alternatively, using Lua module functions directly:
+vim.keymap.set("n", "<leader>gf", function()
+  tardis.inspect_prev_function_commit_at_line()
+end, { desc = "Git-tardis: Jump Prev Function Commit" })
 ```
 
 ---
 
-### `packer.nvim`
+### `pckr.nvim` / `packer.nvim`
 
 ```lua
 use({
   "buxtonpaul/git-tardis",
   config = function()
-    require("git-tardis").setup()
+    local tardis = require("git-tardis")
+    tardis.setup({ window = { border = "rounded" } })
+
+    vim.keymap.set("n", "<leader>gt", "<cmd>GitTardisToggle<cr>", { desc = "Toggle Git-tardis" })
+    vim.keymap.set("n", "<leader>gf", "<cmd>InspectPrevFunctionCommitAtLine<cr>", { desc = "Jump Prev Function Commit" })
+    vim.keymap.set("n", "<leader>gl", "<cmd>InspectPrevLineCommitAtLine<cr>", { desc = "Jump Prev Line Commit" })
+    vim.keymap.set("n", "<leader>gF", "<cmd>InspectPrevFileCommitAtLine<cr>", { desc = "Jump Prev File Commit" })
+    vim.keymap.set("n", "<leader>gc", "<cmd>InspectPrevCommit<cr>", { desc = "Jump Prev Commit" })
   end,
 })
-```
-
----
-
-### `vim-plug`
-
-```vim
-Plug 'buxtonpaul/git-tardis'
-
-" In your init.lua / init.vim:
-lua << EOF
-require('git-tardis').setup()
-EOF
 ```
 
 ---
@@ -111,8 +117,8 @@ require("git-tardis").setup({
 
   -- Floating window geometry and border
   window = {
-    width = 0.85,  -- 85% of editor width
-    height = 0.85, -- 85% of editor height
+    width = 0.85,       -- 85% of editor width
+    height = 0.85,      -- 85% of editor height
     border = "rounded", -- "single", "double", "rounded", "solid", "shadow"
   },
 
@@ -128,32 +134,39 @@ require("git-tardis").setup({
 
 ---
 
-## 4. Commands & Lua API
+## 4. Commands & Lua API Reference
 
 ### User Commands
 
 - `:GitTardis [path]` — Open Git-tardis targeting `path`, or the active buffer if no path is supplied.
 - `:GitTardisToggle` — Toggle the floating terminal window open or closed.
+- `:InspectPrevFunctionCommitAtLine [path]` — Open Git-tardis and instantly step back to the previous commit modifying the enclosing function at the cursor line.
+- `:InspectPrevLineCommitAtLine [path]` — Open Git-tardis and instantly step back to the previous commit modifying the cursor line.
+- `:InspectPrevFileCommitAtLine [path]` — Open Git-tardis and instantly step back to the previous commit modifying the current file.
+- `:InspectPrevCommit [path]` — Open Git-tardis and instantly step back to the previous commit in general history.
 
 ### Lua Module API
 
 ```lua
 local tardis = require("git-tardis")
 
--- Open Git-tardis
-tardis.open(custom_path)
+-- Open/toggle with custom path or jump mode
+tardis.open(custom_path, jump_mode)   -- e.g. tardis.open(nil, "function")
+tardis.toggle(custom_path, jump_mode) -- e.g. tardis.toggle(nil, "line")
+tardis.close()                        -- Close floating window
 
--- Close floating window
-tardis.close()
-
--- Toggle floating window
-tardis.toggle(custom_path)
+-- Mode-specific launch actions
+tardis.inspect_prev_function_commit_at_line(custom_path)
+tardis.inspect_prev_line_commit_at_line(custom_path)
+tardis.inspect_prev_file_commit_at_line(custom_path)
+tardis.inspect_prev_commit(custom_path)
 ```
 
 ---
 
 ## 5. How Editor Context & Theme Syncing Work
 
-When `GitTardis` or `GitTardisToggle` is executed from an active Neovim buffer:
+When `GitTardis` or any launch mode command is executed from an active Neovim buffer:
 1. **Cursor & File Focus**: Automatically passes `--file <buffer_path>` and `--line <cursor_line>` to `git-tardis`, jumping directly to the corresponding file and line in the TUI.
-2. **Theme Inheritance**: Queries active Neovim highlight group colors (`Normal` `fg` and `bg`) and passes `GIT_TARDIS_BG` and `GIT_TARDIS_FG` in the terminal environment so Git-tardis matches your active Neovim colorscheme.
+2. **Jump Mode Resolution**: Passes `--jump-mode <mode>` (e.g. `function`, `line`, `file`, or `commit`) so Git-tardis immediately executes historical time travel upon launching.
+3. **Theme Inheritance**: Queries active Neovim highlight group colors (`Normal` `fg` and `bg`) and passes `GIT_TARDIS_BG` and `GIT_TARDIS_FG` in the terminal environment so Git-tardis matches your active Neovim colorscheme.
