@@ -77,100 +77,16 @@ impl TimelineNavigator {
         let mut function_range: Option<(usize, usize)> = None;
 
         // 1. Fetch relevant commit history for the requested scope
-        let commits = if let Some(cached) = req.cached_commits {
-            if !cached.is_empty() {
-                cached.to_vec()
-            } else {
-                match req.scope {
-                    JumpScope::Commit => repo
-                        .get_commit_history(None)
-                        .map_err(|e| format!("Failed to get commit history: {:?}", e))?,
-                    JumpScope::File => repo.get_file_commits(req.file_path, None).map_err(|e| {
-                        format!("Failed to get file commits for {}: {:?}", req.file_path, e)
-                    })?,
-                    JumpScope::Function => {
-                        let range = find_enclosing_function_range(
-                            &self.grammar_registry,
-                            req.file_path,
-                            &source_code,
-                            req.cursor_line,
-                        )
-                        .map_err(|e| format!("Tree-sitter error: {}", e))?;
-
-                        match range {
-                            Some((start_l, end_l)) => {
-                                function_range = Some((start_l, end_l));
-                                repo.get_line_commits(req.file_path, start_l, end_l, None)
-                                    .map_err(|e| {
-                                        format!(
-                                            "Failed to get function commits ({}-{}) for {}: {:?}",
-                                            start_l, end_l, req.file_path, e
-                                        )
-                                    })?
-                            }
-                            None => {
-                                return Err(format!(
-                                    "No enclosing function found at line {} in {}",
-                                    req.cursor_line, req.file_path
-                                ));
-                            }
-                        }
-                    }
-                    JumpScope::Line => repo
-                        .get_line_commits(req.file_path, req.cursor_line, req.cursor_line, None)
-                        .map_err(|e| {
-                            format!(
-                                "Failed to get line commits for line {} in {}: {:?}",
-                                req.cursor_line, req.file_path, e
-                            )
-                        })?,
-                }
-            }
-        } else {
-            match req.scope {
-                JumpScope::Commit => repo
-                    .get_commit_history(None)
-                    .map_err(|e| format!("Failed to get commit history: {:?}", e))?,
-                JumpScope::File => repo.get_file_commits(req.file_path, None).map_err(|e| {
-                    format!("Failed to get file commits for {}: {:?}", req.file_path, e)
-                })?,
-                JumpScope::Function => {
-                    let range = find_enclosing_function_range(
-                        &self.grammar_registry,
-                        req.file_path,
-                        &source_code,
-                        req.cursor_line,
-                    )
-                    .map_err(|e| format!("Tree-sitter error: {}", e))?;
-
-                    match range {
-                        Some((start_l, end_l)) => {
-                            function_range = Some((start_l, end_l));
-                            repo.get_line_commits(req.file_path, start_l, end_l, None)
-                                .map_err(|e| {
-                                    format!(
-                                        "Failed to get function commits ({}-{}) for {}: {:?}",
-                                        start_l, end_l, req.file_path, e
-                                    )
-                                })?
-                        }
-                        None => {
-                            return Err(format!(
-                                "No enclosing function found at line {} in {}",
-                                req.cursor_line, req.file_path
-                            ));
-                        }
-                    }
-                }
-                JumpScope::Line => repo
-                    .get_line_commits(req.file_path, req.cursor_line, req.cursor_line, None)
-                    .map_err(|e| {
-                        format!(
-                            "Failed to get line commits for line {} in {}: {:?}",
-                            req.cursor_line, req.file_path, e
-                        )
-                    })?,
-            }
+        let commits = match req.cached_commits {
+            Some(cached) if !cached.is_empty() => cached.to_vec(),
+            _ => self.fetch_commits_for_scope(
+                repo,
+                req.scope,
+                req.file_path,
+                &source_code,
+                req.cursor_line,
+                &mut function_range,
+            )?,
         };
 
         if commits.is_empty() {
@@ -181,11 +97,9 @@ impl TimelineNavigator {
         }
 
         // 2. Locate position in commit list based on current_commit_hash
-        let current_idx = req.current_commit_hash.and_then(|hash| {
-            commits.iter().position(|c| {
-                c.hash == hash || c.short_hash == hash || hash.starts_with(&c.short_hash)
-            })
-        });
+        let current_idx = req
+            .current_commit_hash
+            .and_then(|hash| commits.iter().position(|c| c.matches_hash(hash)));
 
         // 3. Determine target commit index or return to working copy
         let target_commit_info = match (req.current_commit_hash, current_idx) {
@@ -201,12 +115,8 @@ impl TimelineNavigator {
                                 .ok()
                                 .and_then(|history| history.into_iter().next().map(|c| c.hash)),
                         };
-                        let first_is_head = actual_head.is_some_and(|head| {
-                            commits[0].hash == head
-                                || commits[0].short_hash == head
-                                || head.starts_with(&commits[0].short_hash)
-                                || commits[0].short_hash.starts_with(&head)
-                        });
+                        let first_is_head =
+                            actual_head.is_some_and(|head| commits[0].matches_hash(&head));
                         if first_is_head && commits.len() > 1 {
                             Some(&commits[1])
                         } else {
@@ -243,19 +153,18 @@ impl TimelineNavigator {
             },
             (Some(hash), None) => {
                 let full_history = repo.get_commit_history(None).unwrap_or_default();
-                let cur_pos = full_history.iter().position(|c| {
-                    c.hash == hash || c.short_hash == hash || hash.starts_with(&c.short_hash)
-                });
+                let cur_pos = full_history
+                    .iter()
+                    .position(|c| c.matches_hash(hash));
 
                 match cur_pos {
                     Some(pos) => match req.direction {
                         JumpDirection::Previous => {
                             let candidate = commits.iter().find(|cand| {
-                                if let Some(cand_pos) = full_history.iter().position(|c| {
-                                    c.hash == cand.hash
-                                        || c.short_hash == cand.short_hash
-                                        || cand.hash.starts_with(&c.short_hash)
-                                }) {
+                                if let Some(cand_pos) = full_history
+                                    .iter()
+                                    .position(|c| c.matches_hash(&cand.hash))
+                                {
                                     cand_pos > pos
                                 } else {
                                     false
@@ -271,11 +180,10 @@ impl TimelineNavigator {
                             }
                         }
                         JumpDirection::Next => commits.iter().rev().find(|cand| {
-                            if let Some(cand_pos) = full_history.iter().position(|c| {
-                                c.hash == cand.hash
-                                    || c.short_hash == cand.short_hash
-                                    || cand.hash.starts_with(&c.short_hash)
-                            }) {
+                            if let Some(cand_pos) = full_history
+                                .iter()
+                                .position(|c| c.matches_hash(&cand.hash))
+                            {
                                 cand_pos < pos
                             } else {
                                 false
@@ -366,5 +274,58 @@ impl TimelineNavigator {
             scope: req.scope,
             line_range: function_range,
         }))
+    }
+
+    fn fetch_commits_for_scope(
+        &self,
+        repo: &GitRepo,
+        scope: JumpScope,
+        file_path: &str,
+        source_code: &str,
+        cursor_line: usize,
+        function_range: &mut Option<(usize, usize)>,
+    ) -> Result<Vec<crate::git::CommitInfo>, String> {
+        match scope {
+            JumpScope::Commit => repo
+                .get_commit_history(None)
+                .map_err(|e| format!("Failed to get commit history: {:?}", e)),
+            JumpScope::File => repo
+                .get_file_commits(file_path, None)
+                .map_err(|e| format!("Failed to get file commits for {}: {:?}", file_path, e)),
+            JumpScope::Function => {
+                let range = find_enclosing_function_range(
+                    &self.grammar_registry,
+                    file_path,
+                    source_code,
+                    cursor_line,
+                )
+                .map_err(|e| format!("Tree-sitter error: {}", e))?;
+
+                match range {
+                    Some((start_l, end_l)) => {
+                        *function_range = Some((start_l, end_l));
+                        repo.get_line_commits(file_path, start_l, end_l, None)
+                            .map_err(|e| {
+                                format!(
+                                    "Failed to get function commits ({}-{}) for {}: {:?}",
+                                    start_l, end_l, file_path, e
+                                )
+                            })
+                    }
+                    None => Err(format!(
+                        "No enclosing function found at line {} in {}",
+                        cursor_line, file_path
+                    )),
+                }
+            }
+            JumpScope::Line => repo
+                .get_line_commits(file_path, cursor_line, cursor_line, None)
+                .map_err(|e| {
+                    format!(
+                        "Failed to get line commits for line {} in {}: {:?}",
+                        cursor_line, file_path, e
+                    )
+                }),
+        }
     }
 }

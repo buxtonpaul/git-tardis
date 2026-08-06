@@ -56,6 +56,20 @@ pub struct CommitInfo {
     pub body: String,
 }
 
+impl CommitInfo {
+    pub fn matches_hash(&self, target_hash: &str) -> bool {
+        if target_hash.is_empty() {
+            return false;
+        }
+        self.hash == target_hash
+            || self.short_hash == target_hash
+            || self.hash.starts_with(target_hash)
+            || self.short_hash.starts_with(target_hash)
+            || target_hash.starts_with(&self.short_hash)
+            || target_hash.starts_with(&self.hash)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FileStatus {
     pub path: String,
