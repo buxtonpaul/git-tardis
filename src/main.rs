@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let mut app = AppState::new(args.path);
+    let mut app = AppState::new(args.path.clone());
     load_repo_data(&mut app);
 
     // Apply theme color overrides if supplied via CLI or env
@@ -52,8 +52,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // If initial target file is specified, open file at specified line
-    if let Some(target_file) = args.file {
+    if let Some(target_file) = &args.file {
         app.open_file_at_line(target_file, args.line);
+    } else if let Some(line) = args.line {
+        app.goto_line(line);
+    }
+
+    if let Some(jump_arg) = args.effective_jump_mode() {
+        let nav_mode: git_tardis::app::NavigationMode = jump_arg.into();
+        app.nav_mode = nav_mode;
+        match jump_arg {
+            git_tardis::cli::NavigationModeArg::Commit => {
+                app.dispatch_action(git_tardis::ui::Action::JumpPrevCommit);
+            }
+            git_tardis::cli::NavigationModeArg::File => {
+                app.dispatch_action(git_tardis::ui::Action::JumpPrevFile);
+            }
+            git_tardis::cli::NavigationModeArg::Function => {
+                app.dispatch_action(git_tardis::ui::Action::JumpPrevFunction);
+            }
+            git_tardis::cli::NavigationModeArg::Line => {
+                app.dispatch_action(git_tardis::ui::Action::JumpPrevLine);
+            }
+        }
     }
 
     let mut registry = KeymapRegistry::new();

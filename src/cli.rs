@@ -1,5 +1,25 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+#[value(rename_all = "lower")]
+pub enum NavigationModeArg {
+    Commit,
+    File,
+    Function,
+    Line,
+}
+
+impl From<NavigationModeArg> for crate::app::NavigationMode {
+    fn from(arg: NavigationModeArg) -> Self {
+        match arg {
+            NavigationModeArg::Commit => crate::app::NavigationMode::Commit,
+            NavigationModeArg::File => crate::app::NavigationMode::File,
+            NavigationModeArg::Function => crate::app::NavigationMode::Function,
+            NavigationModeArg::Line => crate::app::NavigationMode::Line,
+        }
+    }
+}
 
 /// Time travelling git repository inspector & historical rebase tool
 #[derive(Parser, Debug, PartialEq, Eq)]
@@ -32,11 +52,45 @@ pub struct CliArgs {
     /// Path to custom TOML configuration file
     #[arg(short, long)]
     pub config: Option<PathBuf>,
+
+    /// Jump mode for initial launch jump (commit, file, function, line)
+    #[arg(long = "jump-mode", alias = "nav-mode", value_enum, ignore_case = true)]
+    pub jump_mode: Option<NavigationModeArg>,
+
+    /// Launch app and jump to latest historical commit for current function
+    #[arg(long = "jump-prev-function", alias = "jump-function")]
+    pub jump_prev_function: bool,
+
+    /// Launch app and jump to latest historical commit for current line
+    #[arg(long = "jump-prev-line", alias = "jump-line")]
+    pub jump_prev_line: bool,
+
+    /// Launch app and jump to latest historical commit for current file
+    #[arg(long = "jump-prev-file", alias = "jump-file")]
+    pub jump_prev_file: bool,
+
+    /// Launch app and jump to latest historical commit in history
+    #[arg(long = "jump-prev-commit", alias = "jump-commit")]
+    pub jump_prev_commit: bool,
 }
 
 impl CliArgs {
     pub fn parse_args() -> Self {
         Self::parse()
+    }
+
+    pub fn effective_jump_mode(&self) -> Option<NavigationModeArg> {
+        if self.jump_prev_function {
+            Some(NavigationModeArg::Function)
+        } else if self.jump_prev_line {
+            Some(NavigationModeArg::Line)
+        } else if self.jump_prev_file {
+            Some(NavigationModeArg::File)
+        } else if self.jump_prev_commit {
+            Some(NavigationModeArg::Commit)
+        } else {
+            self.jump_mode
+        }
     }
 }
 
@@ -106,5 +160,42 @@ mod tests {
             args.config,
             Some(PathBuf::from("/home/user/.git-tardis.toml"))
         );
+    }
+
+    #[test]
+    fn test_jump_mode_flags() {
+        let args = CliArgs::try_parse_from(["git-tardis", "--jump-mode", "function"]).unwrap();
+        assert_eq!(args.jump_mode, Some(NavigationModeArg::Function));
+        assert_eq!(
+            args.effective_jump_mode(),
+            Some(NavigationModeArg::Function)
+        );
+
+        let args = CliArgs::try_parse_from(["git-tardis", "--nav-mode", "LINE"]).unwrap();
+        assert_eq!(args.jump_mode, Some(NavigationModeArg::Line));
+        assert_eq!(args.effective_jump_mode(), Some(NavigationModeArg::Line));
+
+        let args = CliArgs::try_parse_from(["git-tardis", "--jump-prev-function"]).unwrap();
+        assert!(args.jump_prev_function);
+        assert_eq!(
+            args.effective_jump_mode(),
+            Some(NavigationModeArg::Function)
+        );
+
+        let args = CliArgs::try_parse_from(["git-tardis", "--jump-function"]).unwrap();
+        assert!(args.jump_prev_function);
+        assert_eq!(
+            args.effective_jump_mode(),
+            Some(NavigationModeArg::Function)
+        );
+
+        let args = CliArgs::try_parse_from(["git-tardis", "--jump-prev-line"]).unwrap();
+        assert_eq!(args.effective_jump_mode(), Some(NavigationModeArg::Line));
+
+        let args = CliArgs::try_parse_from(["git-tardis", "--jump-prev-file"]).unwrap();
+        assert_eq!(args.effective_jump_mode(), Some(NavigationModeArg::File));
+
+        let args = CliArgs::try_parse_from(["git-tardis", "--jump-prev-commit"]).unwrap();
+        assert_eq!(args.effective_jump_mode(), Some(NavigationModeArg::Commit));
     }
 }

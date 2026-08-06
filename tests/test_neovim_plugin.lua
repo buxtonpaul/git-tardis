@@ -19,6 +19,10 @@ require("plugin.git-tardis")
 local commands = vim.api.nvim_get_commands({})
 assert(commands["GitTardis"] ~= nil, "User command :GitTardis should be registered")
 assert(commands["GitTardisToggle"] ~= nil, "User command :GitTardisToggle should be registered")
+assert(commands["InspectPrevFunctionCommitAtLine"] ~= nil, "User command :InspectPrevFunctionCommitAtLine should be registered")
+assert(commands["InspectPrevLineCommitAtLine"] ~= nil, "User command :InspectPrevLineCommitAtLine should be registered")
+assert(commands["InspectPrevFileCommitAtLine"] ~= nil, "User command :InspectPrevFileCommitAtLine should be registered")
+assert(commands["InspectPrevCommit"] ~= nil, "User command :InspectPrevCommit should be registered")
 
 print("[TEST] Creating test buffer and window...")
 local test_buf = vim.api.nvim_create_buf(true, false)
@@ -44,6 +48,26 @@ assert(terminal.is_open() == true, "Terminal window should be open after toggle"
 
 git_tardis.toggle()
 assert(terminal.is_open() == false, "Terminal window should be closed after second toggle")
+
+print("[TEST] Testing InspectPrevFunctionCommitAtLine...")
+git_tardis.inspect_prev_function_commit_at_line()
+assert(terminal.is_open() == true, "Terminal window should be open for inspect_prev_function_commit_at_line")
+git_tardis.close()
+
+print("[TEST] Testing InspectPrevLineCommitAtLine...")
+git_tardis.inspect_prev_line_commit_at_line()
+assert(terminal.is_open() == true, "Terminal window should be open for inspect_prev_line_commit_at_line")
+git_tardis.close()
+
+print("[TEST] Testing InspectPrevFileCommitAtLine...")
+git_tardis.inspect_prev_file_commit_at_line()
+assert(terminal.is_open() == true, "Terminal window should be open for inspect_prev_file_commit_at_line")
+git_tardis.close()
+
+print("[TEST] Testing InspectPrevCommit...")
+git_tardis.inspect_prev_commit()
+assert(terminal.is_open() == true, "Terminal window should be open for inspect_prev_commit")
+git_tardis.close()
 
 print("SUCCESS: All Neovim plugin tests passed!")
 vim.cmd("qall!")
