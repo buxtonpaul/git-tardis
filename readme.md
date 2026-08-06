@@ -1,19 +1,26 @@
-# Git-tardis
+# Git-tardis ⌛🛸
 
-A tool for time travelling through your git repositories, allowing you to navigate through your commit history and trace the evolution of your code line-by-line and function-by-function.
+**Git-tardis** is a high-performance Terminal UI (TUI) for time travelling through your Git repositories. It lets you navigate back and forth through commit history to trace how code evolved line-by-line and function-by-function, make historical fixup edits on the fly, and seamlessly integrate into Neovim.
 
-## Features
-
-- **Timeline Navigation**: View files with instant navigation to previous/next commits affecting the current line, enclosing function, or entire file.
-- **Inline Rewrite**: Perform inline fixup edits applied automatically via Git autosquash rebases.
-- **Edit Here**: Trigger interactive rebase pausing at any historical commit to allow shell/editor adjustments before continuing.
-- **Neovim RPC Integration**: Seamlessly launched as a floating window within Neovim, inheriting active color themes via RPC.
-- **High Performance TUI**: Fast syntax highlighting and split navigation built with Rust, Ratatui, Crossterm, and Tree-sitter.
-- **Cross-Platform**: macOS and Linux support.
+![Rust](https://img.shields.io/badge/language-Rust-orange.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 ---
 
-## Installation & Quick Start
+## ✨ Features
+
+- ⏳ **Line & Function Time Travel**: Jump directly between historical commits affecting the exact line under your cursor or its enclosing function using Tree-sitter AST parsing.
+- ⚡ **Inline Fixup & Interactive Rebase**: 
+  - **Inline Fixup (`i`)**: Make rapid edits to historical commits automatically squashed via Git autosquash rebase.
+  - **Edit Here (`e`)**: Pause an interactive rebase at any historical commit, dropping into a shell/editor to make complex adjustments.
+- 🔍 **Diff & Full File Views**: Seamlessly switch between viewing full historical file contents and Git diffs (`v`).
+- 📁 **File Tree & Modified File Explorers**: Browse the workspace tree at any target commit or view only modified files.
+- 🎨 **Neovim RPC Integration**: Launch as a floating window inside Neovim (`git-tardis.nvim`) with synchronized cursor positions, buffer paths, and inherited color schemes.
+- 🚀 **Lightning Fast**: Built with Rust, Ratatui, Crossterm, and Tree-sitter for instant response times even in large repositories.
+
+---
+
+## 📦 Installation
 
 ### Option 1: Homebrew (macOS & Linux)
 
@@ -22,60 +29,87 @@ brew tap buxtonpaul/tap
 brew install git-tardis
 ```
 
-### Option 2: Build from Source
+### Option 2: Cargo / Build from Source
 
 Ensure you have the Rust toolchain installed:
 
 ```bash
 git clone https://github.com/buxtonpaul/git-tardis.git
 cd git-tardis
-cargo build --release
 cargo install --path .
 ```
 
-Verify installation:
+Verify the installation:
 
 ```bash
 git-tardis --version
 ```
 
-For full installation details and Neovim plugin configuration (`git-tardis.nvim`), see [docs/installation.md](docs/installation.md) and [docs/neovim-plugin.md](docs/neovim-plugin.md).
+For full installation options and requirements, see the [Installation Guide](docs/installation.md).
 
 ---
 
-## Basic Usage
+## 🚀 Quick Start & Usage
 
-Launch Git-tardis in any Git repository:
+Launch `git-tardis` inside any Git repository:
 
 ```bash
-# Launch in current repository
+# Open Git-tardis in the current working directory
 git-tardis
 
 # Focus on a specific file and line on startup
 git-tardis -f src/main.rs -l 42
+
+# Launch directly in Function Navigation mode
+git-tardis -f src/app/mod.rs -l 100 --jump-mode function
 ```
 
-Press `?` inside Git-tardis at any time to open the interactive keybindings help screen.
+Press `?` inside Git-tardis at any time to display the interactive keybindings help screen.
 
 ---
 
-## Technical Specifications & Research
+## ⌨️ Common Keybindings
 
-The design and architecture of Git-tardis are backed by validated proofs of concept and technical specifications (see [docs/technical-specification.md](docs/technical-specification.md) for full architectural specs and historical commit references):
-
-### Active Proofs-of-Concept & Research
-| Focus Area | Specification Document | Proof-of-Concept | Key Decision / Outcome |
-| :--- | :--- | :--- | :--- |
-| **Interactive Rebase Engine** | [`docs/research/interactive-rebase-modifications.md`](docs/research/interactive-rebase-modifications.md) | [`research/interactive-rebase-poc/`](research/interactive-rebase-poc/) | Non-interactive fixup rebases vs `GIT_SEQUENCE_EDITOR` marked edits with TUI suspension loops. |
-| **Conflict Resolution Flow** | [`docs/research/conflict-detection-and-resolution.md`](docs/research/conflict-detection-and-resolution.md) | Integrated in rebase PoC | Fail-fast auto-abort with autostash recovery for inline edits; subshell delegation for edit-here. |
-| **Neovim RPC Integration** | [`docs/research/neovim-rpc-terminal-integration.md`](docs/research/neovim-rpc-terminal-integration.md) | [`research/neovim-rpc-poc/`](research/neovim-rpc-poc/) | Bidirectional socket loop via `nvim-rs` + Tokio, using `BufWipeout` autocommands for cleanup. |
-| **Neovim Lua Plugin Launcher** | [`docs/research/neovim-plugin-launcher-packaging.md`](docs/research/neovim-plugin-launcher-packaging.md) | [`research/neovim-plugin-poc/`](research/neovim-plugin-poc/) | `git-tardis.nvim` floating window wrapper passing `$NVIM` environment variable. |
-
-### Completed Features (Integrated into Main Crate)
-The research PoCs for keybindings, layout, syntax highlighting, and tree-sitter scope locators have been fully implemented in `src/` and removed from the active working tree. See [Section 9.1 of the Technical Specification](docs/technical-specification.md#91-historical-research--proof-of-concept-code-references) for historical Git commit hashes (`5fce52e`, `50c9b77`, `4ac3ab7`, `c5319d0`, `43f017b`).
+| Key / Shortcut | Action |
+| :--- | :--- |
+| **`[`** / **`Ctrl+p`** | Jump to **previous commit** affecting current line/function/file |
+| **`]`** / **`Ctrl+n`** | Jump to **next commit** affecting current line/function/file |
+| **`m`** | Cycle navigation scope mode (`Auto` ➔ `Line` ➔ `Function` ➔ `File` ➔ `Commit`) |
+| **`v`** | Toggle between **Diff View** and **Full File View** |
+| **`1`** / **`2`** / **`3`** | Focus **Commit Timeline** (`1`), **File Tree** (`2`), or **Modified Files** (`3`) |
+| **`e`** | **Edit Here**: Trigger interactive rebase paused at selected commit |
+| **`i`** | **Inline Fixup**: Edit historical file content with auto-squash |
+| **`?`** | Toggle interactive **Keybindings Help** overlay |
+| **`q`** / **`Esc`** | Quit / Dismiss modal |
 
 ---
 
-## Wayfinder Map
+## 🔌 Neovim Plugin Integration (`git-tardis.nvim`)
 
-See [Issue #1 (Wayfinder Map)](https://github.com/buxtonpaul/git-tardis/issues/1) for the overall roadmap and technical specifications tracking.
+Git-tardis integrates natively with Neovim! Run `:GitTardis` or `:GitTardisToggle` to open Git-tardis in a floating terminal window with:
+- Automatic sync of current file path and cursor line
+- Dynamic inheritance of Neovim color schemes
+- Instant jumping back to Neovim buffers on selection
+
+Check out the [Neovim Plugin Guide](docs/neovim-plugin.md) for setup with `lazy.nvim`, `packer`, or `vim-plug`.
+
+---
+
+## ⚙️ Configuration
+
+Git-tardis can be customized via a TOML configuration file located at `~/.config/git-tardis/config.toml` (or `$XDG_CONFIG_HOME/git-tardis/config.toml`). You can customize keybindings, color themes, and default navigation modes.
+
+---
+
+## 🛠️ Documentation & Contributing
+
+- 📖 **[Installation Guide](docs/installation.md)** – Platform-specific setup instructions.
+- 🔌 **[Neovim Plugin Guide](docs/neovim-plugin.md)** – Installing and configuring `git-tardis.nvim`.
+- 💻 **[Developer & Architecture Guide](docs/development.md)** – Build instructions, project layout, PoCs, and architectural overviews.
+- 📐 **[Technical Specification](docs/technical-specification.md)** – Deep-dive architectural specification and design documents.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
