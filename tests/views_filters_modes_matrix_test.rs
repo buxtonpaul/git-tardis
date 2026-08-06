@@ -88,7 +88,11 @@ fn setup_matrix_test_repo() -> (TempDir, PathBuf, Vec<String>) {
     )
     .unwrap();
     run(&["add", "."]);
-    run(&["commit", "-m", "C3: Update main.rs helper_one and add helper_two"]);
+    run(&[
+        "commit",
+        "-m",
+        "C3: Update main.rs helper_one and add helper_two",
+    ]);
     commit_hashes.push(get_head_hash());
 
     // Commit 4: Add src/utils.rs
@@ -172,7 +176,10 @@ fn create_app_state_for_repo(repo_path: PathBuf) -> AppState {
             app.dirty_files = items;
         }
         if let Ok(commits) = repo.get_commit_history(Some(50)) {
-            app.commits = commits.into_iter().map(git_tardis::app::CommitSummary::from).collect();
+            app.commits = commits
+                .into_iter()
+                .map(git_tardis::app::CommitSummary::from)
+                .collect();
         }
         app.load_currently_selected_file();
     }
@@ -241,7 +248,10 @@ fn test_sidebar_view_transitions_and_commit_list_filtering() {
     app.dispatch_action(Action::MoveDown);
     // Move from dirty to C6 (first historical commit touching main.rs)
     assert!(app.selected_commit_hash.is_some());
-    assert_eq!(app.selected_commit_hash.as_ref().unwrap(), &commit_hashes[5]); // C6 is index 5
+    assert_eq!(
+        app.selected_commit_hash.as_ref().unwrap(),
+        &commit_hashes[5]
+    ); // C6 is index 5
 
     // Toggle back to TimelineFilter::All
     app.dispatch_action(Action::ToggleTimelineFilter);
@@ -296,7 +306,11 @@ fn test_navigation_mode_candidate_queries_across_views() {
     app.dispatch_action(Action::JumpPrevAuto);
     assert!(app.selected_commit_hash.is_some());
     let current_hash = app.selected_commit_hash.clone().unwrap();
-    assert!(current_hash == commit_hashes[5] || current_hash == commit_hashes[2] || current_hash == commit_hashes[0]);
+    assert!(
+        current_hash == commit_hashes[5]
+            || current_hash == commit_hashes[2]
+            || current_hash == commit_hashes[0]
+    );
 }
 
 #[test]
@@ -316,7 +330,10 @@ fn test_file_view_mode_diff_vs_full_with_target_commit_and_file_switches() {
 
     // Code lines in diff mode should contain diff headers/hunks
     assert!(!app.code_lines.is_empty());
-    assert!(app.code_lines.iter().any(|line| line.contains("diff --git") || line.contains("@@")));
+    assert!(app
+        .code_lines
+        .iter()
+        .any(|line| line.contains("diff --git") || line.contains("@@")));
 
     // Move cursor down in diff view
     app.active_panel = ActivePanel::CodeViewer;
@@ -354,7 +371,10 @@ fn test_target_commit_changes_synchronize_modified_files_and_file_tree() {
 
     // Travel to C3 (Update main.rs helper_one and add helper_two)
     app.update_state_for_commit_hash(commit_hashes[2].clone());
-    assert_eq!(app.selected_commit_hash.as_ref().unwrap(), &commit_hashes[2]);
+    assert_eq!(
+        app.selected_commit_hash.as_ref().unwrap(),
+        &commit_hashes[2]
+    );
 
     // Modified files at C3 should list main.rs
     assert_eq!(app.modified_files.len(), 1);
@@ -362,7 +382,10 @@ fn test_target_commit_changes_synchronize_modified_files_and_file_tree() {
 
     // Travel to C5 (Update README and lib multiply)
     app.update_state_for_commit_hash(commit_hashes[4].clone());
-    assert_eq!(app.selected_commit_hash.as_ref().unwrap(), &commit_hashes[4]);
+    assert_eq!(
+        app.selected_commit_hash.as_ref().unwrap(),
+        &commit_hashes[4]
+    );
 
     // Modified files at C5 should list README.md and src/lib.rs
     assert_eq!(app.modified_files.len(), 2);
@@ -384,7 +407,11 @@ fn test_current_file_and_target_commit_interaction_matrix() {
     // Travel to C4 (where src/utils.rs was added)
     app.update_state_for_commit_hash(commit_hashes[3].clone());
     app.sidebar_view = SidebarView::ModifiedFiles;
-    if let Some(idx) = app.modified_files.iter().position(|f| f.path == "src/utils.rs") {
+    if let Some(idx) = app
+        .modified_files
+        .iter()
+        .position(|f| f.path == "src/utils.rs")
+    {
         app.modified_selected = idx;
     }
     app.load_currently_selected_file();
@@ -400,7 +427,11 @@ fn test_current_file_and_target_commit_interaction_matrix() {
     app.load_currently_selected_file();
 
     // At HEAD, src/utils.rs is deleted, so status message indicates non-existent or empty
-    assert!(app.code_lines.is_empty() || app.status_message.contains("not found") || app.status_message.contains("Non-existent"));
+    assert!(
+        app.code_lines.is_empty()
+            || app.status_message.contains("not found")
+            || app.status_message.contains("Non-existent")
+    );
 }
 
 #[test]

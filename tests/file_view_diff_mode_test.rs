@@ -277,7 +277,10 @@ fn test_non_existent_file_status_message_in_diff_view_mode() {
     app.file_view_mode = FileViewMode::Diff;
     app.load_currently_selected_file();
 
-    let expected_msg = format!("File 'non_existent.rs' did not exist at commit {}", short_hash);
+    let expected_msg = format!(
+        "File 'non_existent.rs' did not exist at commit {}",
+        short_hash
+    );
 
     // Verify status message and code_lines contain non-existent file message in Diff mode
     assert_eq!(app.status_message, expected_msg);

@@ -144,7 +144,10 @@ fn test_execute_edit_here_successful_rebase() {
     let res = execute_edit_here(repo_path, &h2, input, &mut in_alt_screen);
 
     assert_eq!(res, RebaseResult::Completed);
-    assert!(in_alt_screen, "Screen state should be restored to true on completed rebase");
+    assert!(
+        in_alt_screen,
+        "Screen state should be restored to true on completed rebase"
+    );
     assert!(!is_rebase_in_progress(repo_path));
 
     // Verify file_b.txt content after rebase completion
@@ -172,7 +175,10 @@ fn test_uncommitted_changes_exits_session_and_preserves_rebase() {
 
     // Git-tardis must exit with ConflictExited to preserve uncommitted work
     assert!(matches!(res, RebaseResult::ConflictExited(_)));
-    assert!(!in_alt_screen, "Screen state should be false on conflict exit");
+    assert!(
+        !in_alt_screen,
+        "Screen state should be false on conflict exit"
+    );
     assert!(
         is_rebase_in_progress(repo_path),
         "Active rebase session must be preserved on exit"
@@ -301,7 +307,10 @@ fn test_execute_edit_here_conflict_and_exit_choice() {
     let res = execute_edit_here(repo_path, &h1, input, &mut in_alt_screen);
 
     assert!(matches!(res, RebaseResult::ConflictExited(_)));
-    assert!(!in_alt_screen, "Screen state should be false on conflict exit choice");
+    assert!(
+        !in_alt_screen,
+        "Screen state should be false on conflict exit choice"
+    );
     assert!(
         is_rebase_in_progress(repo_path),
         "Rebase should remain active for conflict resolution"
@@ -372,7 +381,10 @@ fn test_execute_edit_here_conflict_and_abort_choice() {
     let res = execute_edit_here(repo_path, &h1, input, &mut in_alt_screen);
 
     assert_eq!(res, RebaseResult::Aborted);
-    assert!(in_alt_screen, "Screen state should be restored to true on rebase abort");
+    assert!(
+        in_alt_screen,
+        "Screen state should be restored to true on rebase abort"
+    );
     assert!(
         !is_rebase_in_progress(repo_path),
         "Rebase should be aborted and state restored"

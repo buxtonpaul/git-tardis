@@ -524,7 +524,10 @@ fn test_sidebar_commit_list_views_bracket_navigation() {
     // Press ']' -> jumps back to C3
     app.dispatch_action(Action::JumpNextAuto);
     assert_eq!(app.candidate_selected, 0); // Pointing to C3
-    assert_eq!(app.selected_commit_hash, Some(app.candidate_commits[0].hash.clone()));
+    assert_eq!(
+        app.selected_commit_hash,
+        Some(app.candidate_commits[0].hash.clone())
+    );
     assert_eq!(app.code_lines, vec!["v2"]);
 
     // Press ']' again -> reset time travel (return to working copy)
@@ -538,7 +541,10 @@ fn test_sidebar_commit_list_views_bracket_navigation() {
 
     // Reset back
     app.dispatch_action(Action::JumpNextAuto);
-    assert_eq!(app.selected_commit_hash, Some(app.candidate_commits[0].hash.clone()));
+    assert_eq!(
+        app.selected_commit_hash,
+        Some(app.candidate_commits[0].hash.clone())
+    );
     app.dispatch_action(Action::JumpNextAuto);
     assert_eq!(app.selected_commit_hash, None);
 }
@@ -570,7 +576,13 @@ fn test_sidebar_commit_timeline_autoscroll_tracks_target_candidate() {
     assert_eq!(app.commit_selected, 0);
 
     // Jump to Commit 5 (which is index 15 in reverse-chronological order)
-    let c5_hash = app.commits.iter().find(|c| c.message == "Commit 5").unwrap().hash.clone();
+    let c5_hash = app
+        .commits
+        .iter()
+        .find(|c| c.message == "Commit 5")
+        .unwrap()
+        .hash
+        .clone();
     app.update_state_for_commit_hash(c5_hash);
 
     assert_eq!(app.commit_selected, 15);
@@ -581,7 +593,9 @@ fn test_sidebar_commit_timeline_autoscroll_tracks_target_candidate() {
     let backend = TestBackend::new(80, 12);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|f| git_tardis::ui::render(f, &mut app)).unwrap();
+    terminal
+        .draw(|f| git_tardis::ui::render(f, &mut app))
+        .unwrap();
     let buffer_str = format!("{:?}", terminal.backend().buffer());
 
     // Verify Commit 5 is automatically scrolled into view in the rendered sidebar
@@ -595,8 +609,18 @@ fn test_sidebar_commit_timeline_autoscroll_tracks_target_candidate() {
 fn test_unified_dirty_and_head_commit_timeline_navigation() {
     let (_dir, repo) = setup_test_repo();
 
-    commit_file(&repo, "main.rs", "fn main() { println!(\"v1\"); }\n", "Commit 1");
-    commit_file(&repo, "main.rs", "fn main() { println!(\"v2\"); }\n", "Commit 2");
+    commit_file(
+        &repo,
+        "main.rs",
+        "fn main() { println!(\"v1\"); }\n",
+        "Commit 1",
+    );
+    commit_file(
+        &repo,
+        "main.rs",
+        "fn main() { println!(\"v2\"); }\n",
+        "Commit 2",
+    );
 
     let mut app = AppState::new(repo.work_dir().to_path_buf());
     app.reload_repo_data();
@@ -615,7 +639,11 @@ fn test_unified_dirty_and_head_commit_timeline_navigation() {
     assert_eq!(app.selected_commit_hash, None);
 
     // 2. Create an uncommitted change in working directory
-    fs::write(repo.work_dir().join("main.rs"), "fn main() { println!(\"dirty\"); }\n").unwrap();
+    fs::write(
+        repo.work_dir().join("main.rs"),
+        "fn main() { println!(\"dirty\"); }\n",
+    )
+    .unwrap();
     app.reload_repo_data();
 
     // Dirty working directory state (uncommitted changes exist):

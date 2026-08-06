@@ -68,7 +68,10 @@ fn test_large_file_tree_caching_and_fast_lookup() {
     let duration_cached = start_cached.elapsed();
 
     println!("Initial file tree build: {:?}", duration_initial);
-    println!("1000 cached visible_file_items calls: {:?}", duration_cached);
+    println!(
+        "1000 cached visible_file_items calls: {:?}",
+        duration_cached
+    );
 
     assert!(
         duration_cached.as_millis() < 50,

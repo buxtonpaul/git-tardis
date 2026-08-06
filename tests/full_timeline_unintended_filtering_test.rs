@@ -58,7 +58,11 @@ fn test_full_commit_timeline_displays_all_commits_without_candidate_filtering() 
     assert_eq!(app.display_commits().len(), 60);
 
     // 2. Select fileA.txt (which only has 5 candidate commits)
-    if let Some(idx) = app.visible_file_items().iter().position(|item| item.path == "fileA.txt") {
+    if let Some(idx) = app
+        .visible_file_items()
+        .iter()
+        .position(|item| item.path == "fileA.txt")
+    {
         app.file_selected = idx;
         app.load_currently_selected_file();
     } else {

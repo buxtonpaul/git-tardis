@@ -270,19 +270,17 @@ impl TimelineNavigator {
                                 ));
                             }
                         }
-                        JumpDirection::Next => {
-                            commits.iter().rev().find(|cand| {
-                                if let Some(cand_pos) = full_history.iter().position(|c| {
-                                    c.hash == cand.hash
-                                        || c.short_hash == cand.short_hash
-                                        || cand.hash.starts_with(&c.short_hash)
-                                }) {
-                                    cand_pos < pos
-                                } else {
-                                    false
-                                }
-                            })
-                        }
+                        JumpDirection::Next => commits.iter().rev().find(|cand| {
+                            if let Some(cand_pos) = full_history.iter().position(|c| {
+                                c.hash == cand.hash
+                                    || c.short_hash == cand.short_hash
+                                    || cand.hash.starts_with(&c.short_hash)
+                            }) {
+                                cand_pos < pos
+                            } else {
+                                false
+                            }
+                        }),
                     },
                     None => match req.direction {
                         JumpDirection::Previous => commits.last(),

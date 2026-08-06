@@ -393,9 +393,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 let safe_sel = if items_list.is_empty() {
                     0
                 } else {
-                    state
-                        .candidate_selected
-                        .min(items_list.len() - 1)
+                    state.candidate_selected.min(items_list.len() - 1)
                 };
 
                 let items: Vec<ListItem> = items_list
@@ -649,7 +647,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
     }
 
     let viewport_height = main_chunks[1].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
-    state.sidebar_viewport_height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
+    state.sidebar_viewport_height =
+        main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
     state.ensure_cursor_visible(viewport_height);
     let scroll_offset = state.code_scroll_offset;
 
@@ -670,7 +669,11 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     // 4. Keybindings Help Overlay Popup
     if state.show_help {
-        let area = centered_rect(HELP_MODAL_WIDTH_PERCENT, HELP_MODAL_HEIGHT_PERCENT, frame.area());
+        let area = centered_rect(
+            HELP_MODAL_WIDTH_PERCENT,
+            HELP_MODAL_HEIGHT_PERCENT,
+            frame.area(),
+        );
         frame.render_widget(Clear, area);
 
         let help_block = Block::default()
@@ -740,7 +743,11 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     // 5. TARDIS Splashscreen Overlay Popup
     if state.show_splashscreen {
-        let area = centered_rect(SPLASH_MODAL_WIDTH_PERCENT, SPLASH_MODAL_HEIGHT_PERCENT, frame.area());
+        let area = centered_rect(
+            SPLASH_MODAL_WIDTH_PERCENT,
+            SPLASH_MODAL_HEIGHT_PERCENT,
+            frame.area(),
+        );
         frame.render_widget(Clear, area);
 
         let splash_block = Block::default()
@@ -756,7 +763,11 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     // 6. Navigation Input Prompt Overlay Modal
     if let Some(prompt) = &state.input_prompt {
-        let area = centered_rect(PROMPT_MODAL_WIDTH_PERCENT, PROMPT_MODAL_HEIGHT_PERCENT, frame.area());
+        let area = centered_rect(
+            PROMPT_MODAL_WIDTH_PERCENT,
+            PROMPT_MODAL_HEIGHT_PERCENT,
+            frame.area(),
+        );
         frame.render_widget(Clear, area);
 
         let (title, prefix) = match prompt {
