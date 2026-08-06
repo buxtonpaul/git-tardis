@@ -148,15 +148,10 @@ fn parse_header(s: &str) -> Option<(usize, &str)> {
 }
 
 fn parse_checkbox(s: &str) -> Option<(bool, &str)> {
-    let rest = if let Some(r) = s.strip_prefix("- ") {
-        r
-    } else if let Some(r) = s.strip_prefix("* ") {
-        r
-    } else if let Some(r) = s.strip_prefix("+ ") {
-        r
-    } else {
-        return None;
-    };
+    let rest = s
+        .strip_prefix("- ")
+        .or_else(|| s.strip_prefix("* "))
+        .or_else(|| s.strip_prefix("+ "))?;
 
     if let Some(r) = rest.strip_prefix("[ ] ") {
         Some((false, r))

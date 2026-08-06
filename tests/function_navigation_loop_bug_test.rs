@@ -32,7 +32,7 @@ fn setup_shifting_function_repo() -> (TempDir, std::path::PathBuf, Vec<String>) 
     let get_head_hash = || {
         let output = Command::new("git")
             .current_dir(&repo_path)
-            .args(&["rev-parse", "HEAD"])
+            .args(["rev-parse", "HEAD"])
             .output()
             .unwrap();
         String::from_utf8_lossy(&output.stdout).trim().to_string()

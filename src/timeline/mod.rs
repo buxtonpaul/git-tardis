@@ -201,7 +201,7 @@ impl TimelineNavigator {
                                 .ok()
                                 .and_then(|history| history.into_iter().next().map(|c| c.hash)),
                         };
-                        let first_is_head = actual_head.map_or(false, |head| {
+                        let first_is_head = actual_head.is_some_and(|head| {
                             commits[0].hash == head
                                 || commits[0].short_hash == head
                                 || head.starts_with(&commits[0].short_hash)
