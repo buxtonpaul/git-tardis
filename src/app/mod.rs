@@ -1065,7 +1065,12 @@ impl AppState {
                 match diff_res {
                     Ok(diff_text) => {
                         let trimmed = diff_text.trim();
-                        if trimmed.is_empty() {
+                        let has_diff = trimmed
+                            .lines()
+                            .any(|l| l.starts_with("diff --git") || l.starts_with("@@"));
+                        if trimmed.is_empty()
+                            || (!has_diff && target_commit.is_some() && clean_path.is_some())
+                        {
                             if let (Some(hash), Some(path)) = (&target_commit, &clean_path) {
                                 if repo.get_file_at_commit(hash, path).is_err() {
                                     let short_hash = &hash[..7.min(hash.len())];
