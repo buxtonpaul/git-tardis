@@ -153,17 +153,14 @@ impl TimelineNavigator {
             },
             (Some(hash), None) => {
                 let full_history = repo.get_commit_history(None).unwrap_or_default();
-                let cur_pos = full_history
-                    .iter()
-                    .position(|c| c.matches_hash(hash));
+                let cur_pos = full_history.iter().position(|c| c.matches_hash(hash));
 
                 match cur_pos {
                     Some(pos) => match req.direction {
                         JumpDirection::Previous => {
                             let candidate = commits.iter().find(|cand| {
-                                if let Some(cand_pos) = full_history
-                                    .iter()
-                                    .position(|c| c.matches_hash(&cand.hash))
+                                if let Some(cand_pos) =
+                                    full_history.iter().position(|c| c.matches_hash(&cand.hash))
                                 {
                                     cand_pos > pos
                                 } else {
@@ -180,9 +177,8 @@ impl TimelineNavigator {
                             }
                         }
                         JumpDirection::Next => commits.iter().rev().find(|cand| {
-                            if let Some(cand_pos) = full_history
-                                .iter()
-                                .position(|c| c.matches_hash(&cand.hash))
+                            if let Some(cand_pos) =
+                                full_history.iter().position(|c| c.matches_hash(&cand.hash))
                             {
                                 cand_pos < pos
                             } else {
