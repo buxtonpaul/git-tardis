@@ -1,0 +1,132 @@
+{
+  "name": "git-tardis-vscode",
+  "displayName": "Git-tardis",
+  "description": "VS Code integration for Git-tardis line and function time travel",
+  "version": "0.1.0",
+  "publisher": "buxtonpaul",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Version Control",
+    "Source Control"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "git-tardis.open",
+        "title": "Git-tardis: Open",
+        "category": "Git-tardis"
+      },
+      {
+        "command": "git-tardis.toggle",
+        "title": "Git-tardis: Toggle Terminal",
+        "category": "Git-tardis"
+      },
+      {
+        "command": "git-tardis.inspectPrevFunction",
+        "title": "Git-tardis: Jump Prev Function Commit",
+        "category": "Git-tardis"
+      },
+      {
+        "command": "git-tardis.inspectPrevLine",
+        "title": "Git-tardis: Jump Prev Line Commit",
+        "category": "Git-tardis"
+      },
+      {
+        "command": "git-tardis.inspectPrevFile",
+        "title": "Git-tardis: Jump Prev File Commit",
+        "category": "Git-tardis"
+      },
+      {
+        "command": "git-tardis.inspectPrevCommit",
+        "title": "Git-tardis: Jump Prev Commit",
+        "category": "Git-tardis"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "git-tardis.open",
+        "key": "ctrl+alt+g o",
+        "mac": "cmd+alt+g o",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "git-tardis.toggle",
+        "key": "ctrl+alt+g t",
+        "mac": "cmd+alt+g t"
+      },
+      {
+        "command": "git-tardis.inspectPrevFunction",
+        "key": "ctrl+alt+g f",
+        "mac": "cmd+alt+g f",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "git-tardis.inspectPrevLine",
+        "key": "ctrl+alt+g l",
+        "mac": "cmd+alt+g l",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "git-tardis.inspectPrevFile",
+        "key": "ctrl+alt+g a",
+        "mac": "cmd+alt+g a",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "git-tardis.inspectPrevCommit",
+        "key": "ctrl+alt+g c",
+        "mac": "cmd+alt+g c",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Git-tardis",
+      "properties": {
+        "git-tardis.binaryPath": {
+          "type": "string",
+          "default": "git-tardis",
+          "description": "Executable path or command name for the git-tardis binary."
+        },
+        "git-tardis.terminalLocation": {
+          "type": "string",
+          "enum": [
+            "editor",
+            "panel"
+          ],
+          "enumDescriptions": [
+            "Open git-tardis terminal as an editor tab/pane alongside active code.",
+            "Open git-tardis terminal in the bottom panel."
+          ],
+          "default": "editor",
+          "description": "Location where the git-tardis terminal pane will be created."
+        },
+        "git-tardis.autoClosePane": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically close the terminal tab or panel when the git-tardis process exits."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.js --production",
+    "compile": "node esbuild.js && tsc -p .",
+    "watch": "node esbuild.js --watch",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^18.18.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-electron": "^2.3.8",
+    "esbuild": "^0.20.0",
+    "mocha": "^10.2.0",
+    "typescript": "^5.3.0"
+  }
+}

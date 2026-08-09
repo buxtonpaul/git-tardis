@@ -81,7 +81,9 @@ Press `?` inside Git-tardis at any time to display the interactive keybindings h
 
 ---
 
-## 🔌 Neovim Plugin Integration (`git-tardis.nvim`)
+## 🔌 Editor Extensions
+
+### Neovim Plugin (`git-tardis.nvim`)
 
 Git-tardis integrates natively with Neovim! Run `:GitTardis`, `:GitTardisToggle`, or launch mode commands (`:InspectPrevFunctionCommitAtLine`, `:InspectPrevLineCommitAtLine`, `:InspectPrevFileCommitAtLine`, `:InspectPrevCommit`) to open Git-tardis in a floating terminal window with:
 - Automatic sync of current file path, cursor line, and jump mode
@@ -89,6 +91,15 @@ Git-tardis integrates natively with Neovim! Run `:GitTardis`, `:GitTardisToggle`
 - Instant keymap integration for line and function history inspection
 
 Check out the [Neovim Plugin Guide](docs/neovim-plugin.md) for full setup and keymaps with `lazy.nvim`, `packer`, or `vim-plug`.
+
+### Visual Studio Code Extension (`git-tardis-vscode`)
+
+Integrate Git-tardis into VS Code! Launch from the Command Palette or default shortcuts (`Cmd+Alt+G F` / `Ctrl+Alt+G F` for function time travel, `Cmd+Alt+G L` / `Ctrl+Alt+G L` for line time travel):
+- Direct opening at active file path and 1-based line position
+- Integrated terminal tab/panel execution with auto-closing on process exit
+- Configurable binary paths, terminal locations (`editor` vs `panel`), and keybindings
+
+Check out the [VS Code Extension Guide](docs/vscode-extension.md) for installation and usage instructions.
 
 ---
 
@@ -102,6 +113,7 @@ Git-tardis can be customized via a TOML configuration file located at `~/.config
 
 - 📖 **[Installation Guide](docs/installation.md)** – Platform-specific setup instructions.
 - 🔌 **[Neovim Plugin Guide](docs/neovim-plugin.md)** – Installing and configuring `git-tardis.nvim`.
+- ⚡ **[VS Code Extension Guide](docs/vscode-extension.md)** – Setup and configuration for VS Code.
 - 💻 **[Developer & Architecture Guide](docs/development.md)** – Build instructions, project layout, PoCs, and architectural overviews.
 - 📐 **[Technical Specification](docs/technical-specification.md)** – Deep-dive architectural specification and design documents.
 

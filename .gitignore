@@ -3,3 +3,9 @@ target/
 *.log
 RELEASE_GUIDE.md
 .scratch/
+node_modules/
+dist/
+out/
+.vscode-test/
+*.vsix
+
