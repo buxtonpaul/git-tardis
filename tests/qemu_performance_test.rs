@@ -171,3 +171,41 @@ fn test_qemu_commit_switching_and_scrolling_performance() {
 
     println!("\n=== Benchmark Complete ===");
 }
+
+#[test]
+fn test_tcg_op_h_performance() {
+    let qemu_path = match get_perf_repo_path() {
+        Some(p) => p,
+        None => return,
+    };
+
+    println!("\n=== TCG-OP.H Detailed Performance Breakdown ===");
+    let app = AppState::new(qemu_path);
+    let repo = app.repo().unwrap();
+    let target_file = "include/tcg/tcg-op.h";
+
+    let t0 = Instant::now();
+    let file_path = app.repo_path.join(target_file);
+    let content = std::fs::read_to_string(&file_path).unwrap();
+    println!("  fs::read_to_string: {:?} ({} lines)", t0.elapsed(), content.lines().count());
+
+    let t1 = Instant::now();
+    let _blame = repo.get_blame_at_commit(None, target_file, None, None);
+    println!("  repo.get_blame_at_commit (full): {:?}", t1.elapsed());
+
+    let t1_line = Instant::now();
+    let _blame_line = repo.get_blame_at_commit(None, target_file, Some(10), Some(10));
+    println!("  repo.get_blame_at_commit (single line 10): {:?}", t1_line.elapsed());
+
+    let t2 = Instant::now();
+    let file_commits = repo.get_file_commits(target_file, None).unwrap();
+    println!("  repo.get_file_commits (all): {:?} ({} commits)", t2.elapsed(), file_commits.len());
+
+    let t2_limit = Instant::now();
+    let file_commits_50 = repo.get_file_commits(target_file, Some(50)).unwrap();
+    println!("  repo.get_file_commits (limit 50): {:?} ({} commits)", t2_limit.elapsed(), file_commits_50.len());
+
+    let t3 = Instant::now();
+    let _diff = repo.get_working_diff(Some(target_file));
+    println!("  repo.get_working_diff: {:?}", t3.elapsed());
+}

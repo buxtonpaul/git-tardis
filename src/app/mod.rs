@@ -538,7 +538,11 @@ impl AppState {
                     self.cursor_line += 1;
                     self.ensure_cursor_visible(self.code_viewport_height);
                     self.update_current_line_blame();
-                    self.update_candidate_commits();
+                    if self.sidebar_view == SidebarView::CommitTimeline
+                        || self.timeline_filter == TimelineFilter::Candidates
+                    {
+                        self.update_candidate_commits();
+                    }
                 }
             }
         }
@@ -592,7 +596,11 @@ impl AppState {
                     self.cursor_line -= 1;
                     self.ensure_cursor_visible(self.code_viewport_height);
                     self.update_current_line_blame();
-                    self.update_candidate_commits();
+                    if self.sidebar_view == SidebarView::CommitTimeline
+                        || self.timeline_filter == TimelineFilter::Candidates
+                    {
+                        self.update_candidate_commits();
+                    }
                 }
             }
         }
@@ -687,6 +695,23 @@ impl AppState {
                     _ => false,
                 };
                 if same_file_and_mode {
+                    if let Some(hash) = &self.selected_commit_hash {
+                        if let Some(idx) = self
+                            .display_candidate_commits()
+                            .iter()
+                            .position(|c| c.matches_hash(hash))
+                        {
+                            self.candidate_selected = idx;
+                        }
+                        if let Some(idx) = self
+                            .display_commits()
+                            .iter()
+                            .position(|c| c.matches_hash(hash))
+                        {
+                            self.commit_selected = idx;
+                        }
+                    }
+                    self.last_candidate_query_key = Some(key);
                     return;
                 }
             }
@@ -717,15 +742,18 @@ impl AppState {
             None => return,
         };
 
+        let default_limit = Some(200);
         let commits_res = match &key {
-            CandidateQueryKey::Commit { .. } => repo.get_commit_history(None),
-            CandidateQueryKey::File { file_path, .. } => repo.get_file_commits(file_path, None),
+            CandidateQueryKey::Commit { .. } => repo.get_commit_history(default_limit),
+            CandidateQueryKey::File { file_path, .. } => {
+                repo.get_file_commits(file_path, default_limit)
+            }
             CandidateQueryKey::LineRange {
                 file_path,
                 start_line,
                 end_line,
                 ..
-            } => repo.get_line_commits(file_path, *start_line, *end_line, None),
+            } => repo.get_line_commits(file_path, *start_line, *end_line, default_limit),
         };
 
         if let Ok(commits) = commits_res {
@@ -796,12 +824,49 @@ impl AppState {
         self.invalidate_modified_status_cache();
         self.invalidate_file_tree_cache();
 
-        let display_c = self.display_commits();
+        let mut display_c = self.display_commits();
+        if !display_c.iter().any(|c| c.matches_hash(&hash)) {
+            if let Some(repo) = self.repo() {
+                if let Ok(more_commits) = repo.get_commit_history(Some(1000)) {
+                    let has_target = more_commits.iter().any(|c| c.matches_hash(&hash));
+                    if has_target {
+                        self.commits =
+                            more_commits.into_iter().map(CommitSummary::from).collect();
+                    } else if let Ok(all_commits) = repo.get_commit_history(None) {
+                        self.commits =
+                            all_commits.into_iter().map(CommitSummary::from).collect();
+                    }
+                }
+            }
+            display_c = self.display_commits();
+        }
+
         if let Some(idx) = display_c.iter().position(|c| c.matches_hash(&hash)) {
             self.commit_selected = idx;
         }
 
-        let display_cands = self.display_candidate_commits();
+        let mut display_cands = self.display_candidate_commits();
+        if !display_cands.iter().any(|c| c.matches_hash(&hash)) {
+            if let Some(repo) = self.repo() {
+                if let Some(file_path) = self.current_file_path() {
+                    let limit = Some(1000);
+                    let res = match self.nav_mode {
+                        NavigationMode::Commit => repo.get_commit_history(limit),
+                        NavigationMode::File => repo.get_file_commits(&file_path, limit),
+                        NavigationMode::Function | NavigationMode::Line => {
+                            let line = self.effective_cursor_line();
+                            repo.get_line_commits(&file_path, line, line, limit)
+                        }
+                    };
+                    if let Ok(cands) = res {
+                        self.candidate_commits =
+                            cands.into_iter().map(CommitSummary::from).collect();
+                    }
+                }
+            }
+            display_cands = self.display_candidate_commits();
+        }
+
         if let Some(idx) = display_cands.iter().position(|c| c.matches_hash(&hash)) {
             self.candidate_selected = idx;
         }
@@ -933,7 +998,7 @@ impl AppState {
                     statuses.into_iter().map(ModifiedFileEntry::from).collect();
                 self.dirty_files = items;
             }
-            if let Ok(commits) = repo.get_commit_history(None) {
+            if let Ok(commits) = repo.get_commit_history(Some(200)) {
                 self.commits = commits.into_iter().map(CommitSummary::from).collect();
             }
             self.load_currently_selected_file();
@@ -1274,7 +1339,12 @@ impl AppState {
         self.last_loaded_view_mode = Some(target_view_mode);
 
         self.update_current_line_blame();
-        self.update_candidate_commits();
+        if self.nav_mode != NavigationMode::Commit
+            || self.sidebar_view == SidebarView::CommitTimeline
+            || self.timeline_filter == TimelineFilter::Candidates
+        {
+            self.update_candidate_commits();
+        }
         self.update_file_diff_highlights();
     }
 
@@ -1642,18 +1712,6 @@ impl AppState {
 
         let key = (file_path.clone(), self.selected_commit_hash.clone());
 
-        if !self.blame_cache.contains_key(&key) {
-            if let Some(repo) = self.repo() {
-                let commit = self.selected_commit_hash.as_deref();
-                self.blame_subprocess_count += 1;
-                let blame_res = repo.get_blame_at_commit(commit, &file_path, None, None);
-                let blame_lines = blame_res.unwrap_or_default();
-                self.blame_cache.insert(key.clone(), blame_lines);
-            } else {
-                self.blame_cache.insert(key.clone(), Vec::new());
-            }
-        }
-
         if let Some(blame_lines) = self.blame_cache.get(&key) {
             let effective_line = self.effective_cursor_line();
             if effective_line > 0 {
@@ -1665,8 +1723,58 @@ impl AppState {
             } else {
                 self.current_line_blame = None;
             }
-        } else {
+            return;
+        }
+
+        let effective_line = self.effective_cursor_line();
+        if effective_line == 0 {
             self.current_line_blame = None;
+            return;
+        }
+
+        // For small files (<= 200 lines), fetch and cache full file blame up front.
+        // For larger files, use fast single-line blame on demand to avoid UI freezes.
+        if self.code_lines.len() <= 200 {
+            if let Some(repo) = self.repo() {
+                let commit = self.selected_commit_hash.as_deref();
+                self.blame_subprocess_count += 1;
+                let blame_res = repo.get_blame_at_commit(commit, &file_path, None, None);
+                let blame_lines = blame_res.unwrap_or_default();
+                self.blame_cache.insert(key.clone(), blame_lines.clone());
+
+                let found = blame_lines
+                    .get(effective_line - 1)
+                    .filter(|b| b.final_line == effective_line)
+                    .or_else(|| blame_lines.iter().find(|b| b.final_line == effective_line));
+                self.current_line_blame = found.cloned();
+            } else {
+                self.blame_cache.insert(key, Vec::new());
+                self.current_line_blame = None;
+            }
+        } else {
+            let single_key = (
+                file_path.clone(),
+                self.selected_commit_hash.clone(),
+                effective_line,
+            );
+            if let Some(cached_line_blame) = self.single_line_blame_cache.get(&single_key) {
+                self.current_line_blame = cached_line_blame.clone();
+            } else if let Some(repo) = self.repo() {
+                let commit = self.selected_commit_hash.as_deref();
+                self.blame_subprocess_count += 1;
+                let blame_res = repo.get_blame_at_commit(
+                    commit,
+                    &file_path,
+                    Some(effective_line),
+                    Some(effective_line),
+                );
+                let blame_line = blame_res.ok().and_then(|lines| lines.into_iter().next());
+                self.single_line_blame_cache
+                    .insert(single_key, blame_line.clone());
+                self.current_line_blame = blame_line;
+            } else {
+                self.current_line_blame = None;
+            }
         }
     }
 

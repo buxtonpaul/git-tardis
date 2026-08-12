@@ -152,7 +152,7 @@ impl TimelineNavigator {
                 }
             },
             (Some(hash), None) => {
-                let full_history = repo.get_commit_history(None).unwrap_or_default();
+                let full_history = repo.get_commit_history(Some(1000)).unwrap_or_default();
                 let cur_pos = full_history.iter().position(|c| c.matches_hash(hash));
 
                 match cur_pos {
@@ -283,10 +283,10 @@ impl TimelineNavigator {
     ) -> Result<Vec<crate::git::CommitInfo>, String> {
         match scope {
             JumpScope::Commit => repo
-                .get_commit_history(None)
+                .get_commit_history(Some(200))
                 .map_err(|e| format!("Failed to get commit history: {:?}", e)),
             JumpScope::File => repo
-                .get_file_commits(file_path, None)
+                .get_file_commits(file_path, Some(200))
                 .map_err(|e| format!("Failed to get file commits for {}: {:?}", file_path, e)),
             JumpScope::Function => {
                 let range = find_enclosing_function_range(
@@ -300,7 +300,7 @@ impl TimelineNavigator {
                 match range {
                     Some((start_l, end_l)) => {
                         *function_range = Some((start_l, end_l));
-                        repo.get_line_commits(file_path, start_l, end_l, None)
+                        repo.get_line_commits(file_path, start_l, end_l, Some(200))
                             .map_err(|e| {
                                 format!(
                                     "Failed to get function commits ({}-{}) for {}: {:?}",
@@ -315,7 +315,7 @@ impl TimelineNavigator {
                 }
             }
             JumpScope::Line => repo
-                .get_line_commits(file_path, cursor_line, cursor_line, None)
+                .get_line_commits(file_path, cursor_line, cursor_line, Some(200))
                 .map_err(|e| {
                     format!(
                         "Failed to get line commits for line {} in {}: {:?}",

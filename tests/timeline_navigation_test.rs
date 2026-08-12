@@ -1,4 +1,4 @@
-use git_tardis::app::{AppState, CommitSummary, NavigationMode};
+use git_tardis::app::{ActivePanel, AppState, CommitSummary, NavigationMode, SidebarView};
 use git_tardis::git::GitRepo;
 use git_tardis::timeline::{JumpDirection, JumpScope, TimelineJumpRequest, TimelineNavigator};
 use git_tardis::ui::Action;
@@ -411,6 +411,62 @@ fn test_changing_selected_file_updates_candidate_commits() {
         .candidate_commits
         .iter()
         .any(|c| c.message.contains("C2")));
+}
+
+#[test]
+fn test_reproduce_user_timeline_jump_selection_sync() {
+    let (_dir, repo) = setup_test_repo();
+
+    commit_file(&repo, "file_a.txt", "v1\n", "C1: file_a v1");
+    commit_file(&repo, "file_b.txt", "v1\n", "C2: file_b v1");
+    commit_file(&repo, "file_a.txt", "v2\n", "C3: file_a v2");
+    commit_file(&repo, "file_a.txt", "v3\n", "C4: file_a v3");
+
+    let mut app = AppState::new(repo.work_dir().to_path_buf());
+    app.reload_repo_data();
+    // 1. Navigate to file_a.txt in FileExplorer
+    app.sidebar_view = SidebarView::FileExplorer;
+    app.file_selected = 0;
+    app.load_currently_selected_file();
+    assert_eq!(app.current_file_path().as_deref(), Some("file_a.txt"));
+
+    // 2. Switch to CodeViewer / File view and toggle commit timeline
+    app.active_panel = ActivePanel::CodeViewer;
+    app.set_sidebar_view(SidebarView::CommitTimeline);
+
+    // 3. Switch timeline navigation mode to File
+    app.set_navigation_mode(NavigationMode::File);
+
+    let initial_candidates = app.display_candidate_commits();
+    println!("Initial candidates (len={}):", initial_candidates.len());
+    for (i, c) in initial_candidates.iter().enumerate() {
+        println!("  [{}] {} {}", i, c.short_hash, c.message);
+    }
+    println!("Initial candidate_selected: {}", app.candidate_selected);
+
+    // 4. Press '[' (JumpPrevAuto or JumpPrevFile)
+    app.dispatch_action(Action::JumpPrevAuto);
+
+    println!("\nAfter JumpPrevAuto:");
+    println!("selected_commit_hash: {:?}", app.selected_commit_hash);
+    println!("commit_selected: {}", app.commit_selected);
+    println!("candidate_selected: {}", app.candidate_selected);
+
+    let updated_candidates = app.display_candidate_commits();
+    for (i, c) in updated_candidates.iter().enumerate() {
+        let is_sel = i == app.candidate_selected;
+        println!("  [{}] {} {} {}", i, if is_sel { "=>" } else { "  " }, c.short_hash, c.message);
+    }
+
+    let target_hash = app.selected_commit_hash.clone().unwrap();
+    let sel_commit = &updated_candidates[app.candidate_selected];
+    assert!(
+        sel_commit.matches_hash(&target_hash),
+        "Expected candidate_selected ({}) to match target_hash {}, got {}",
+        app.candidate_selected,
+        target_hash,
+        sel_commit.hash
+    );
 }
 
 #[test]
