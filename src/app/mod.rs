@@ -6,6 +6,9 @@ pub use file_tree::*;
 mod types;
 pub use types::*;
 
+pub mod worker;
+use worker::{BlameKey, GitJob, GitJobResult, GitWorker};
+
 use crate::git::{BlameLine, GitRepo};
 use crate::treesitter::GrammarRegistry;
 use crate::ui::keymap::{Action, Scope};
@@ -103,6 +106,20 @@ struct HighlightCache {
     lines: Vec<crate::treesitter::HighlightLine>,
 }
 
+/// How long the cursor must rest before a deferred candidate query is sent to the worker.
+pub const CANDIDATE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(90);
+
+/// Upper bound on full-file blame results kept when blame is loaded in the background.
+const BACKGROUND_BLAME_CACHE_LIMIT: usize = 16;
+
+/// A candidate query that has been deferred to the background worker.
+#[derive(Debug, Clone)]
+struct PendingCandidates {
+    key: CandidateQueryKey,
+    requested_at: std::time::Instant,
+    dispatched: bool,
+}
+
 pub struct AppState {
     pub repo_path: PathBuf,
     pub repo: Option<GitRepo>,
@@ -174,6 +191,14 @@ pub struct AppState {
     highlight_cache: Option<HighlightCache>,
     /// Commit whose tree listing has not been loaded into `files` yet.
     pending_files_commit: Option<String>,
+    /// When set, cursor-driven blame and candidate queries run on a worker thread and are
+    /// applied by `poll_background`. Off by default so library callers stay synchronous.
+    background_git: bool,
+    git_worker: Option<GitWorker>,
+    /// Bumped whenever cached git data is invalidated, so late results can be discarded.
+    background_epoch: u64,
+    requested_blame: Option<BlameKey>,
+    pending_candidates: Option<PendingCandidates>,
     pub highlight_parse_count: usize,
     pub candidate_commits_cache: std::collections::HashMap<CandidateQueryKey, Vec<CommitSummary>>,
     pub last_candidate_query_key: Option<CandidateQueryKey>,
@@ -267,6 +292,11 @@ impl AppState {
             modified_status_cache: std::cell::RefCell::new(None),
             highlight_cache: None,
             pending_files_commit: None,
+            background_git: false,
+            git_worker: None,
+            background_epoch: 0,
+            requested_blame: None,
+            pending_candidates: None,
             highlight_parse_count: 0,
             candidate_commits_cache: std::collections::HashMap::new(),
             last_candidate_query_key: None,
@@ -672,7 +702,19 @@ impl AppState {
         self.running = false;
     }
 
+    /// Refresh `candidate_commits` for the current file, cursor and navigation mode. With
+    /// background git enabled, a query that is not cached is deferred to the worker and
+    /// applied later by `poll_background`.
     pub fn update_candidate_commits(&mut self) {
+        self.refresh_candidate_commits(self.background_git);
+    }
+
+    /// Refresh `candidate_commits` and wait for the result, even with background git enabled.
+    pub fn update_candidate_commits_now(&mut self) {
+        self.refresh_candidate_commits(false);
+    }
+
+    fn refresh_candidate_commits(&mut self, allow_defer: bool) {
         self.ensure_repo();
         let cur_file = self.current_file_path();
 
@@ -739,6 +781,7 @@ impl AppState {
         };
 
         if self.last_candidate_query_key.as_ref() == Some(&key) {
+            self.pending_candidates = None;
             return;
         }
 
@@ -774,6 +817,7 @@ impl AppState {
                         }
                     }
                     self.last_candidate_query_key = Some(key);
+                    self.pending_candidates = None;
                     return;
                 }
             }
@@ -782,6 +826,7 @@ impl AppState {
         if let Some(cached_commits) = self.candidate_commits_cache.get(&key) {
             self.candidate_commits = cached_commits.clone();
             self.last_candidate_query_key = Some(key);
+            self.pending_candidates = None;
 
             if let Some(hash) = &self.selected_commit_hash {
                 if let Some(idx) = self
@@ -799,47 +844,152 @@ impl AppState {
             return;
         }
 
+        if allow_defer {
+            // Keep the debounce timer running if this query is already waiting.
+            if self.pending_candidates.as_ref().map(|p| &p.key) != Some(&key) {
+                self.pending_candidates = Some(PendingCandidates {
+                    key,
+                    requested_at: std::time::Instant::now(),
+                    dispatched: false,
+                });
+            }
+            return;
+        }
+        self.pending_candidates = None;
+
         let repo = match self.repo() {
             Some(r) => r,
             None => return,
         };
 
-        let default_limit = Some(200);
-        let commits_res = match &key {
-            CandidateQueryKey::Commit { .. } => repo.get_commit_history(default_limit),
-            CandidateQueryKey::File { file_path, .. } => {
-                repo.get_file_commits(file_path, default_limit)
-            }
-            CandidateQueryKey::LineRange {
-                file_path,
-                start_line,
-                end_line,
-                ..
-            } => repo.get_line_commits(file_path, *start_line, *end_line, default_limit),
-        };
-
-        if let Ok(commits) = commits_res {
-            let candidate_list: Vec<CommitSummary> =
-                commits.into_iter().map(CommitSummary::from).collect();
+        if let Ok(candidate_list) = worker::fetch_candidate_commits(&repo, &key) {
             self.candidate_commits_cache
                 .insert(key.clone(), candidate_list.clone());
-            self.candidate_commits = candidate_list;
-            self.last_candidate_query_key = Some(key);
+            self.apply_candidate_commits(key, candidate_list);
+        }
+    }
 
-            if let Some(hash) = &self.selected_commit_hash {
-                if let Some(idx) = self
-                    .candidate_commits
+    fn apply_candidate_commits(&mut self, key: CandidateQueryKey, commits: Vec<CommitSummary>) {
+        self.candidate_commits = commits;
+        self.last_candidate_query_key = Some(key);
+        self.candidate_selected = self
+            .selected_commit_hash
+            .as_ref()
+            .and_then(|hash| {
+                self.candidate_commits
                     .iter()
                     .position(|c| c.matches_hash(hash))
-                {
-                    self.candidate_selected = idx;
-                } else {
-                    self.candidate_selected = 0;
-                }
-            } else {
-                self.candidate_selected = 0;
+            })
+            .unwrap_or(0);
+    }
+
+    /// Run cursor-driven blame and candidate queries on a worker thread instead of blocking.
+    /// Results are applied by `poll_background`, which the event loop calls between frames.
+    pub fn enable_background_git(&mut self) {
+        self.background_git = true;
+    }
+
+    /// True while a background query is waiting to be sent or has not returned yet.
+    pub fn has_pending_background(&self) -> bool {
+        self.pending_candidates.is_some() || self.requested_blame.is_some()
+    }
+
+    fn git_worker(&mut self) -> Option<&GitWorker> {
+        if self.git_worker.is_none() {
+            let repo = self.repo()?;
+            self.git_worker = Some(GitWorker::spawn(repo));
+        }
+        self.git_worker.as_ref()
+    }
+
+    fn request_background_blame(&mut self, key: BlameKey) {
+        if self.requested_blame.as_ref() == Some(&key) {
+            return;
+        }
+        let epoch = self.background_epoch;
+        if let Some(worker) = self.git_worker() {
+            worker.submit(GitJob::Blame {
+                epoch,
+                key: key.clone(),
+            });
+            self.requested_blame = Some(key);
+        }
+    }
+
+    /// Discard anything the worker is still computing for data that has been invalidated.
+    fn invalidate_background_results(&mut self) {
+        self.background_epoch += 1;
+        self.requested_blame = None;
+        self.pending_candidates = None;
+    }
+
+    /// Send due background queries and apply finished ones. Returns true when visible state
+    /// changed and the screen should be redrawn.
+    pub fn poll_background(&mut self) -> bool {
+        if !self.background_git {
+            return false;
+        }
+
+        let due = self
+            .pending_candidates
+            .as_ref()
+            .filter(|p| !p.dispatched && p.requested_at.elapsed() >= CANDIDATE_DEBOUNCE)
+            .map(|p| p.key.clone());
+        if let Some(key) = due {
+            let epoch = self.background_epoch;
+            if let Some(worker) = self.git_worker() {
+                worker.submit(GitJob::Candidates { epoch, key });
+            }
+            if let Some(pending) = self.pending_candidates.as_mut() {
+                pending.dispatched = true;
             }
         }
+
+        let mut changed = false;
+        while let Some(result) = self.git_worker.as_ref().and_then(|w| w.try_recv()) {
+            match result {
+                GitJobResult::Blame { epoch, key, lines } => {
+                    if epoch != self.background_epoch {
+                        continue;
+                    }
+                    if self.blame_cache.len() >= BACKGROUND_BLAME_CACHE_LIMIT {
+                        self.blame_cache.clear();
+                    }
+                    if self.requested_blame.as_ref() == Some(&key) {
+                        self.requested_blame = None;
+                    }
+                    let is_current = self.current_file_path().as_ref() == Some(&key.0)
+                        && self.selected_commit_hash == key.1;
+                    self.blame_cache.insert(key, lines);
+                    if is_current {
+                        self.update_current_line_blame();
+                        changed = true;
+                    }
+                }
+                GitJobResult::Candidates {
+                    epoch,
+                    key,
+                    commits,
+                } => {
+                    if epoch != self.background_epoch {
+                        continue;
+                    }
+                    let is_wanted = self.pending_candidates.as_ref().map(|p| &p.key) == Some(&key);
+                    if is_wanted {
+                        self.pending_candidates = None;
+                    }
+                    if let Some(commits) = commits {
+                        self.candidate_commits_cache
+                            .insert(key.clone(), commits.clone());
+                        if is_wanted {
+                            self.apply_candidate_commits(key, commits);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        changed
     }
 
     pub fn display_commits(&self) -> Vec<CommitSummary> {
@@ -1043,6 +1193,7 @@ impl AppState {
     }
 
     pub fn clear_blame_cache(&mut self) {
+        self.invalidate_background_results();
         self.blame_cache.clear();
         self.single_line_blame_cache.clear();
         self.candidate_commits_cache.clear();
@@ -1056,6 +1207,9 @@ impl AppState {
     }
 
     pub fn reload_repo_data(&mut self) {
+        self.invalidate_background_results();
+        self.blame_cache.clear();
+        self.single_line_blame_cache.clear();
         self.invalidate_file_tree_cache();
         self.invalidate_modified_status_cache();
         self.candidate_commits_cache.clear();
@@ -1536,6 +1690,12 @@ impl AppState {
             }
         };
 
+        // A jump must use the candidates for the current cursor position, so resolve any
+        // query that is still waiting on the worker before reading them.
+        if self.pending_candidates.is_some() {
+            self.update_candidate_commits_now();
+        }
+
         let cached_info: Vec<crate::git::CommitInfo> = match (scope, self.nav_mode) {
             (crate::timeline::JumpScope::Commit, _) => {
                 self.commits.iter().map(|c| c.into()).collect()
@@ -1814,6 +1974,14 @@ impl AppState {
         let effective_line = self.effective_cursor_line();
         if effective_line == 0 {
             self.current_line_blame = None;
+            return;
+        }
+
+        if self.background_git {
+            // The whole file is blamed once on the worker; the annotation appears when the
+            // result is applied by `poll_background`.
+            self.current_line_blame = None;
+            self.request_background_blame(key);
             return;
         }
 

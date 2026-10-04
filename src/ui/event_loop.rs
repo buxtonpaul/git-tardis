@@ -9,6 +9,9 @@ use crate::app::AppState;
 /// How long to wait for input before checking for a pending key-chord timeout.
 pub const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
+/// Shorter wait used while a background git query is outstanding, so results show promptly.
+pub const BACKGROUND_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
 /// Upper bound on time spent applying queued input before the next redraw, so that slow
 /// actions still show progress while fast ones are batched into a single frame.
 pub const EVENT_BATCH_BUDGET: Duration = Duration::from_millis(16);
@@ -57,7 +60,12 @@ where
             needs_redraw = false;
         }
 
-        if events.poll(IDLE_POLL_INTERVAL)? {
+        let poll_interval = if app.has_pending_background() {
+            BACKGROUND_POLL_INTERVAL
+        } else {
+            IDLE_POLL_INTERVAL
+        };
+        if events.poll(poll_interval)? {
             let batch_start = Instant::now();
             loop {
                 let mut ran_edit_here = false;
@@ -94,6 +102,10 @@ where
                 app.dispatch_action(action);
                 needs_redraw = true;
             }
+        }
+
+        if app.poll_background() {
+            needs_redraw = true;
         }
     }
 

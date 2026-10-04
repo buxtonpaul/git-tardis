@@ -95,6 +95,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.in_alternate_screen = true;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
+    // From here on, blame and candidate lookups that follow the cursor run off the UI thread.
+    app.enable_background_git();
+
     run_event_loop(
         &mut terminal,
         &mut app,
