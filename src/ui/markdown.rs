@@ -29,6 +29,13 @@ impl MarkdownFormatterState {
             in_code_block: false,
         }
     }
+
+    /// Update multi-line state for a line that is not being rendered (e.g. scrolled out of view).
+    pub fn advance(&mut self, line: &str) {
+        if line.trim().starts_with("```") {
+            self.in_code_block = !self.in_code_block;
+        }
+    }
 }
 
 /// Render a single line of Markdown text into a list of styled Ratatui Spans

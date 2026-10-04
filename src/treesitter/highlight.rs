@@ -77,11 +77,22 @@ pub fn highlight_viewport(
     // 3. Generate spans per line in viewport
     let mut highlighted_lines = Vec::with_capacity(clamped_end - clamped_start + 1);
 
+    // Captures are sorted by start byte, so the ones touching a line sit in a window that only
+    // moves forward: `first_live` skips captures that ended before the line, and the upper bound
+    // is the first capture starting at or after the line end.
+    let mut first_live = 0;
+
     for line_num in clamped_start..=clamped_end {
         let row = line_num - 1;
         let line_text = lines[row];
         let line_start_byte = line_byte_offsets[row];
         let line_end_byte = line_start_byte + line_text.len();
+
+        while first_live < byte_captures.len()
+            && byte_captures[first_live].end_byte <= line_start_byte
+        {
+            first_live += 1;
+        }
 
         if line_text.is_empty() {
             highlighted_lines.push(HighlightLine {
@@ -95,7 +106,8 @@ pub fn highlight_viewport(
         }
 
         // Filter captures relevant to this line
-        let relevant: Vec<&ByteCapture> = byte_captures
+        let window_end = byte_captures.partition_point(|c| c.start_byte < line_end_byte);
+        let relevant: Vec<&ByteCapture> = byte_captures[first_live.min(window_end)..window_end]
             .iter()
             .filter(|c| c.start_byte < line_end_byte && c.end_byte > line_start_byte)
             .collect();

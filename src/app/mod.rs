@@ -95,6 +95,14 @@ pub struct ModifiedStatusCache {
     pub dir_prefixes: std::collections::HashSet<String>,
 }
 
+/// Syntax highlighting for the whole of `code_lines`, reused across frames until the content changes.
+#[derive(Debug, Clone)]
+struct HighlightCache {
+    grammar: String,
+    content_hash: u64,
+    lines: Vec<crate::treesitter::HighlightLine>,
+}
+
 pub struct AppState {
     pub repo_path: PathBuf,
     pub repo: Option<GitRepo>,
@@ -163,6 +171,8 @@ pub struct AppState {
     visible_file_items_cache:
         std::cell::RefCell<Option<Vec<crate::app::file_tree::VisibleFileItem>>>,
     modified_status_cache: std::cell::RefCell<Option<ModifiedStatusCache>>,
+    highlight_cache: Option<HighlightCache>,
+    pub highlight_parse_count: usize,
     pub candidate_commits_cache: std::collections::HashMap<CandidateQueryKey, Vec<CommitSummary>>,
     pub last_candidate_query_key: Option<CandidateQueryKey>,
     pub diff_highlights_cache: std::collections::HashMap<
@@ -253,6 +263,8 @@ impl AppState {
             file_tree_cache: std::cell::RefCell::new(None),
             visible_file_items_cache: std::cell::RefCell::new(None),
             modified_status_cache: std::cell::RefCell::new(None),
+            highlight_cache: None,
+            highlight_parse_count: 0,
             candidate_commits_cache: std::collections::HashMap::new(),
             last_candidate_query_key: None,
             diff_highlights_cache: std::collections::HashMap::new(),
@@ -291,6 +303,50 @@ impl AppState {
             .as_ref()
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// Syntax-highlighted spans for every line of `code_lines`, or `None` when the current file
+    /// has no registered grammar. The file is only re-parsed when its content or grammar changes.
+    pub fn highlighted_lines(&mut self) -> Option<&[crate::treesitter::HighlightLine]> {
+        use std::hash::{Hash, Hasher};
+
+        let path = self.current_file_path()?;
+        let ext = std::path::Path::new(&path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        let entry = self.grammar_registry.get_by_extension(ext)?;
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.code_lines.hash(&mut hasher);
+        let content_hash = hasher.finish();
+
+        let is_fresh = self
+            .highlight_cache
+            .as_ref()
+            .is_some_and(|c| c.content_hash == content_hash && c.grammar == entry.name);
+        if !is_fresh {
+            let source_code = self.code_lines.join("\n");
+            let lines = crate::treesitter::highlight_viewport(
+                &entry,
+                &source_code,
+                1,
+                self.code_lines.len(),
+            );
+            self.highlight_parse_count += 1;
+            self.highlight_cache = Some(HighlightCache {
+                grammar: entry.name.clone(),
+                content_hash,
+                lines,
+            });
+        }
+
+        self.highlight_cache.as_ref().map(|c| c.lines.as_slice())
+    }
+
+    /// The highlight result from the last `highlighted_lines` call, without refreshing it.
+    pub fn cached_highlighted_lines(&self) -> Option<&[crate::treesitter::HighlightLine]> {
+        self.highlight_cache.as_ref().map(|c| c.lines.as_slice())
     }
 
     pub fn active_modified_files(&self) -> &[ModifiedFileEntry] {
@@ -830,11 +886,9 @@ impl AppState {
                 if let Ok(more_commits) = repo.get_commit_history(Some(1000)) {
                     let has_target = more_commits.iter().any(|c| c.matches_hash(&hash));
                     if has_target {
-                        self.commits =
-                            more_commits.into_iter().map(CommitSummary::from).collect();
+                        self.commits = more_commits.into_iter().map(CommitSummary::from).collect();
                     } else if let Ok(all_commits) = repo.get_commit_history(None) {
-                        self.commits =
-                            all_commits.into_iter().map(CommitSummary::from).collect();
+                        self.commits = all_commits.into_iter().map(CommitSummary::from).collect();
                     }
                 }
             }

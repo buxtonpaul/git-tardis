@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::app::{ActivePanel, AppState, SidebarView};
-use crate::treesitter::{capture_name_to_style, highlight_viewport};
+use crate::treesitter::capture_name_to_style;
 
 /// Header block constraint height in characters
 pub const HEADER_HEIGHT: u16 = 3;
@@ -475,6 +475,12 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         .title(title_text)
         .border_style(Style::default().fg(code_border_color));
 
+    let viewport_height = main_chunks[1].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
+    state.sidebar_viewport_height =
+        main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
+    state.ensure_cursor_visible(viewport_height);
+    let scroll_offset = state.code_scroll_offset;
+
     let mut formatted_code = Vec::new();
     if state.code_lines.is_empty() {
         formatted_code = crate::ui::splash::render_splashscreen_lines(state.git_version.as_deref());
@@ -483,26 +489,33 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         let is_markdown = crate::ui::markdown::is_markdown_file(cur_path.as_deref())
             && state.render_markdown_formatted;
 
-        let grammar_entry = if !is_markdown {
-            cur_path.and_then(|path| {
-                let ext = std::path::Path::new(&path)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("");
-                state.grammar_registry.get_by_extension(ext)
-            })
+        // Refresh the highlight cache up front; it is read back immutably below.
+        let has_highlights = !is_markdown && state.highlighted_lines().is_some();
+        let state = &*state;
+        let highlighted_lines = if has_highlights {
+            state.cached_highlighted_lines()
         } else {
             None
         };
 
-        let source_code = state.code_lines.join("\n");
-        let highlighted_lines = grammar_entry
-            .as_ref()
-            .map(|entry| highlight_viewport(entry, &source_code, 1, state.code_lines.len()));
+        // Only the lines inside the viewport are turned into styled spans.
+        let visible_start = scroll_offset.min(state.code_lines.len());
+        let visible_end = (visible_start + viewport_height).min(state.code_lines.len());
 
         let mut md_state = crate::ui::markdown::MarkdownFormatterState::new();
+        if is_markdown {
+            for line in &state.code_lines[..visible_start] {
+                md_state.advance(line);
+            }
+        }
 
-        for (idx, line) in state.code_lines.iter().enumerate() {
+        for (idx, line) in state
+            .code_lines
+            .iter()
+            .enumerate()
+            .take(visible_end)
+            .skip(visible_start)
+        {
             let line_num = idx + 1;
             let is_cursor = line_num == state.cursor_line;
 
@@ -567,7 +580,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 let md_spans =
                     crate::ui::markdown::render_markdown_line(line, &mut md_state, base_style);
                 spans.extend(md_spans);
-            } else if let Some(hl_line) = highlighted_lines.as_ref().and_then(|hl| hl.get(idx)) {
+            } else if let Some(hl_line) = highlighted_lines.and_then(|hl| hl.get(idx)) {
                 for hl_span in &hl_line.spans {
                     let mut span_style = capture_name_to_style(&hl_span.capture_name);
                     if is_cursor && is_code_active {
@@ -646,15 +659,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         }
     }
 
-    let viewport_height = main_chunks[1].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
-    state.sidebar_viewport_height =
-        main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
-    state.ensure_cursor_visible(viewport_height);
-    let scroll_offset = state.code_scroll_offset;
-
-    let paragraph = Paragraph::new(formatted_code)
-        .block(code_block)
-        .scroll((scroll_offset as u16, 0));
+    let paragraph = Paragraph::new(formatted_code).block(code_block);
     frame.render_widget(paragraph, main_chunks[1]);
 
     // 3. Footer Status Bar
