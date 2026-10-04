@@ -455,7 +455,13 @@ fn test_reproduce_user_timeline_jump_selection_sync() {
     let updated_candidates = app.display_candidate_commits();
     for (i, c) in updated_candidates.iter().enumerate() {
         let is_sel = i == app.candidate_selected;
-        println!("  [{}] {} {} {}", i, if is_sel { "=>" } else { "  " }, c.short_hash, c.message);
+        println!(
+            "  [{}] {} {} {}",
+            i,
+            if is_sel { "=>" } else { "  " },
+            c.short_hash,
+            c.message
+        );
     }
 
     let target_hash = app.selected_commit_hash.clone().unwrap();
