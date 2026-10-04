@@ -1,14 +1,13 @@
 use std::io::{stdout, IsTerminal, Write};
 
 use crossterm::{
-    event::{self, Event, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use git_tardis::app::AppState;
 use git_tardis::cli::CliArgs;
 use git_tardis::config::Config;
-use git_tardis::ui::{render, KeyDispatcher, KeymapRegistry};
+use git_tardis::ui::{run_event_loop, CrosstermEvents, KeyDispatcher, KeymapRegistry};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 fn load_repo_data(app: &mut AppState) {
@@ -96,29 +95,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.in_alternate_screen = true;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
-    while app.running {
-        terminal.draw(|f| render(f, &mut app))?;
-
-        if event::poll(std::time::Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    if app.input_prompt.is_some() {
-                        app.handle_input_key(key);
-                    } else if let Some(action) = dispatcher.handle_event(key, app.active_scope()) {
-                        let is_edit_here = action == git_tardis::ui::Action::EditHere;
-                        app.dispatch_action(action);
-                        if is_edit_here && app.running {
-                            terminal.clear()?;
-                        }
-                    }
-                }
-            }
-        } else if app.input_prompt.is_none() {
-            if let Some(action) = dispatcher.check_timeout(app.active_scope()) {
-                app.dispatch_action(action);
-            }
-        }
-    }
+    run_event_loop(
+        &mut terminal,
+        &mut app,
+        &mut dispatcher,
+        &mut CrosstermEvents,
+    )?;
 
     disable_raw_mode()?;
     if app.in_alternate_screen {
