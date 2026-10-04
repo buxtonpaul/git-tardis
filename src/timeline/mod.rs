@@ -45,20 +45,41 @@ pub struct TimelineJumpResult {
     pub line_range: Option<(usize, usize)>,
 }
 
-pub struct TimelineNavigator {
-    grammar_registry: GrammarRegistry,
+pub struct TimelineNavigator<'a> {
+    shared_registry: Option<&'a GrammarRegistry>,
+    owned_registry: std::cell::OnceCell<GrammarRegistry>,
 }
 
-impl Default for TimelineNavigator {
+impl Default for TimelineNavigator<'static> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TimelineNavigator {
+impl TimelineNavigator<'static> {
+    /// Create a navigator that builds its own grammar registry the first time it needs one.
     pub fn new() -> Self {
         Self {
-            grammar_registry: GrammarRegistry::new(),
+            shared_registry: None,
+            owned_registry: std::cell::OnceCell::new(),
+        }
+    }
+}
+
+impl<'a> TimelineNavigator<'a> {
+    /// Create a navigator that reuses an existing grammar registry. Building a registry
+    /// compiles every highlight query, so callers that already hold one should pass it in.
+    pub fn with_registry(registry: &'a GrammarRegistry) -> Self {
+        Self {
+            shared_registry: Some(registry),
+            owned_registry: std::cell::OnceCell::new(),
+        }
+    }
+
+    fn grammar_registry(&self) -> &GrammarRegistry {
+        match self.shared_registry {
+            Some(registry) => registry,
+            None => self.owned_registry.get_or_init(GrammarRegistry::new),
         }
     }
 
@@ -290,7 +311,7 @@ impl TimelineNavigator {
                 .map_err(|e| format!("Failed to get file commits for {}: {:?}", file_path, e)),
             JumpScope::Function => {
                 let range = find_enclosing_function_range(
-                    &self.grammar_registry,
+                    self.grammar_registry(),
                     file_path,
                     source_code,
                     cursor_line,

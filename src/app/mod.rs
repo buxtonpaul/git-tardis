@@ -172,6 +172,8 @@ pub struct AppState {
         std::cell::RefCell<Option<Vec<crate::app::file_tree::VisibleFileItem>>>,
     modified_status_cache: std::cell::RefCell<Option<ModifiedStatusCache>>,
     highlight_cache: Option<HighlightCache>,
+    /// Commit whose tree listing has not been loaded into `files` yet.
+    pending_files_commit: Option<String>,
     pub highlight_parse_count: usize,
     pub candidate_commits_cache: std::collections::HashMap<CandidateQueryKey, Vec<CommitSummary>>,
     pub last_candidate_query_key: Option<CandidateQueryKey>,
@@ -264,6 +266,7 @@ impl AppState {
             visible_file_items_cache: std::cell::RefCell::new(None),
             modified_status_cache: std::cell::RefCell::new(None),
             highlight_cache: None,
+            pending_files_commit: None,
             highlight_parse_count: 0,
             candidate_commits_cache: std::collections::HashMap::new(),
             last_candidate_query_key: None,
@@ -512,6 +515,9 @@ impl AppState {
 
     pub fn set_sidebar_view(&mut self, view: SidebarView) {
         self.sidebar_view = view;
+        if view == SidebarView::FileExplorer {
+            self.ensure_commit_files_loaded();
+        }
         if view == SidebarView::CommitTimeline {
             self.timeline_filter = TimelineFilter::All;
             self.update_candidate_commits();
@@ -878,7 +884,6 @@ impl AppState {
 
         self.selected_commit_hash = Some(hash.clone());
         self.invalidate_modified_status_cache();
-        self.invalidate_file_tree_cache();
 
         let mut display_c = self.display_commits();
         if !display_c.iter().any(|c| c.matches_hash(&hash)) {
@@ -968,10 +973,27 @@ impl AppState {
             }
         }
 
+        // The explorer's file list needs a full tree listing, so only fetch it now when the
+        // explorer is on screen; otherwise it is loaded the first time something needs it.
+        self.pending_files_commit = Some(hash);
+        if self.sidebar_view == SidebarView::FileExplorer {
+            self.ensure_commit_files_loaded();
+        }
+
+        self.update_file_diff_highlights();
+    }
+
+    /// Load the file list for the selected commit if it was deferred by
+    /// `update_state_for_commit_hash`. Does nothing when `files` is already up to date.
+    pub fn ensure_commit_files_loaded(&mut self) {
+        let hash = match self.pending_files_commit.take() {
+            Some(h) => h,
+            None => return,
+        };
         if let Some(repo) = self.repo() {
-            // Update file explorer list for this target commit
             if let Ok(tree_files) = repo.list_files_at_commit(&hash) {
                 self.files = tree_files;
+                self.invalidate_file_tree_cache();
                 if let Some(cur_file) = self.current_file_path() {
                     let items = self.visible_file_items();
                     if let Some(f_idx) = items.iter().position(|it| it.path == cur_file) {
@@ -986,13 +1008,12 @@ impl AppState {
                 }
             }
         }
-
-        self.update_file_diff_highlights();
     }
 
     pub fn reset_time_travel(&mut self) {
         self.ensure_repo();
         self.selected_commit_hash = None;
+        self.pending_files_commit = None;
         self.commit_selected = 0;
         self.candidate_selected = 0;
         if let Some(repo) = self.repo() {
@@ -1046,6 +1067,7 @@ impl AppState {
         if let Some(repo) = self.repo() {
             if let Ok(files) = repo.list_files() {
                 self.files = files;
+                self.pending_files_commit = None;
             }
             if let Ok(statuses) = repo.get_status() {
                 let items: Vec<ModifiedFileEntry> =
@@ -1116,6 +1138,9 @@ impl AppState {
 
     pub fn load_currently_selected_file(&mut self) {
         self.ensure_repo();
+        if self.sidebar_view == SidebarView::FileExplorer || self.active_file.is_none() {
+            self.ensure_commit_files_loaded();
+        }
         match self.sidebar_view {
             SidebarView::FileExplorer => {
                 let items = self.visible_file_items();
@@ -1533,7 +1558,7 @@ impl AppState {
         let head_hash = self.commits.first().map(|c| c.hash.clone());
 
         let effective_line = self.effective_cursor_line();
-        let navigator = crate::timeline::TimelineNavigator::new();
+        let navigator = crate::timeline::TimelineNavigator::with_registry(&self.grammar_registry);
         let repo_opt = self.repo();
         match navigator.jump(crate::timeline::TimelineJumpRequest {
             repo_path: &self.repo_path,
@@ -1550,6 +1575,12 @@ impl AppState {
         }) {
             Ok(Some(result)) => {
                 let status_msg = result.status_message;
+                // The navigator already read the file at the target commit; keep it so
+                // loading the file below does not fetch it a second time.
+                self.file_content_cache.insert(
+                    (result.file_path.clone(), result.commit_hash.clone()),
+                    result.code_lines,
+                );
                 self.update_state_for_commit_hash(result.commit_hash);
                 self.active_file = Some(result.file_path);
                 self.load_currently_selected_file();

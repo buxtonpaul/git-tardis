@@ -148,6 +148,7 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     match state.sidebar_view {
         SidebarView::FileExplorer => {
+            state.ensure_commit_files_loaded();
             let visible_items = state.visible_file_items();
             let sel_index = if visible_items.is_empty() {
                 0
