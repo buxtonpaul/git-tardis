@@ -134,8 +134,11 @@ fn test_file_explorer_unmodified_diff_skipping() {
     assert!(app.file_diff_highlights.is_empty());
 
     println!("20 file selections in FileExplorer: {:?}", duration);
+    // Each selection runs a git subprocess here, and starting a process is several times
+    // slower on Windows.
+    let limit_ms = if cfg!(windows) { 5000 } else { 1000 };
     assert!(
-        duration.as_millis() < 1000,
+        duration.as_millis() < limit_ms,
         "FileExplorer selection was too slow: {:?}",
         duration
     );
