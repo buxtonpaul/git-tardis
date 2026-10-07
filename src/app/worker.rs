@@ -9,6 +9,9 @@ use crate::git::{BlameLine, GitError, GitRepo};
 /// Commit limit applied to candidate history queries.
 pub const CANDIDATE_COMMIT_LIMIT: usize = 200;
 
+/// How many commits the timeline loads before falling back to the whole history.
+pub const EXTENDED_HISTORY_LIMIT: usize = 1000;
+
 /// Key identifying a full-file blame: file path and the commit it is viewed at.
 pub type BlameKey = (String, Option<String>);
 
@@ -30,6 +33,31 @@ pub enum GitJobResult {
         key: CandidateQueryKey,
         commits: Option<Vec<CommitSummary>>,
     },
+    History {
+        epoch: u64,
+        commits: Option<Vec<CommitSummary>>,
+        /// True when `commits` is the whole history rather than its newest part.
+        complete: bool,
+    },
+}
+
+/// Load enough of the commit history to include `hash`: the newest
+/// `EXTENDED_HISTORY_LIMIT` commits if it is among them, otherwise everything. Returns the
+/// commits and whether they are the whole history.
+pub fn fetch_history_containing(
+    repo: &GitRepo,
+    hash: &str,
+) -> Result<(Vec<CommitSummary>, bool), GitError> {
+    let recent = repo.get_commit_history_brief(Some(EXTENDED_HISTORY_LIMIT))?;
+    if recent.len() < EXTENDED_HISTORY_LIMIT || recent.iter().any(|c| c.matches_hash(hash)) {
+        let complete = recent.len() < EXTENDED_HISTORY_LIMIT;
+        return Ok((
+            recent.into_iter().map(CommitSummary::from).collect(),
+            complete,
+        ));
+    }
+    let all = repo.get_commit_history_brief(None)?;
+    Ok((all.into_iter().map(CommitSummary::from).collect(), true))
 }
 
 /// Run the history query described by `key`.
@@ -53,16 +81,21 @@ pub fn fetch_candidate_commits(
 
 /// Handle to the worker thread. Dropping it closes the job channel, which stops the thread.
 pub struct GitWorker {
+    repo: GitRepo,
     jobs: Sender<GitJob>,
     results: Receiver<GitJobResult>,
+    result_sender: Sender<GitJobResult>,
 }
 
 impl GitWorker {
     pub fn spawn(repo: GitRepo) -> Self {
         let (job_tx, job_rx) = mpsc::channel::<GitJob>();
         let (result_tx, result_rx) = mpsc::channel::<GitJobResult>();
+        let result_sender = result_tx.clone();
+        let worker_repo = repo.clone();
 
         std::thread::spawn(move || {
+            let repo = worker_repo;
             while let Ok(first) = job_rx.recv() {
                 // Requests pile up while a query runs. Only the newest of each kind still
                 // matters, so older ones are dropped rather than run.
@@ -102,9 +135,34 @@ impl GitWorker {
         });
 
         Self {
+            repo,
             jobs: job_tx,
             results: result_rx,
+            result_sender,
         }
+    }
+
+    /// Load the commit history out to `hash` on a thread of its own. Listing a long
+    /// history takes far longer than the queries that follow the cursor, so it must not
+    /// hold them up in the shared queue.
+    pub fn load_history(&self, epoch: u64, hash: String) {
+        let repo = self.repo.clone();
+        let results = self.result_sender.clone();
+        std::thread::spawn(move || {
+            let result = match fetch_history_containing(&repo, &hash) {
+                Ok((commits, complete)) => GitJobResult::History {
+                    epoch,
+                    commits: Some(commits),
+                    complete,
+                },
+                Err(_) => GitJobResult::History {
+                    epoch,
+                    commits: None,
+                    complete: false,
+                },
+            };
+            let _ = results.send(result);
+        });
     }
 
     pub fn submit(&self, job: GitJob) {

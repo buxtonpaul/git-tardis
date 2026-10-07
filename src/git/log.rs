@@ -20,6 +20,24 @@ impl GitRepo {
         parse_commit_log(&output)
     }
 
+    /// Like `get_commit_history`, asking git only for the hashes and subject line. The
+    /// author, email, date and body of each commit are left empty. Listing a long history
+    /// is dominated by the size of the output, and the timeline shows none of those fields.
+    pub fn get_commit_history_brief(
+        &self,
+        max_count: Option<usize>,
+    ) -> Result<Vec<CommitInfo>, GitError> {
+        let mut args = vec!["log", "--format=%H%x1f%h%x1f%x1f%x1f%x1f%s%x1f%x1e"];
+        let max_count_str;
+        if let Some(count) = max_count {
+            max_count_str = format!("-n{}", count);
+            args.push(&max_count_str);
+        }
+
+        let output = self.run_git(&args)?;
+        parse_commit_log(&output)
+    }
+
     /// Retrieve commit history that modified a specific file path.
     pub fn get_file_commits(
         &self,

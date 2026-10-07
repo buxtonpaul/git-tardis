@@ -121,6 +121,21 @@ struct RenamedFile {
     current: String,
 }
 
+/// What a deferred jump is waiting for from the background threads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JumpWait {
+    Candidates,
+    History,
+}
+
+/// A jump that will be performed once the data it needs has arrived.
+#[derive(Debug, Clone, Copy)]
+struct PendingJump {
+    scope: crate::timeline::JumpScope,
+    direction: crate::timeline::JumpDirection,
+    waits_for: JumpWait,
+}
+
 /// A candidate query that has been deferred to the background worker.
 #[derive(Debug, Clone)]
 struct PendingCandidates {
@@ -215,7 +230,14 @@ pub struct AppState {
     requested_blame: Option<BlameKey>,
     pending_candidates: Option<PendingCandidates>,
     /// A jump waiting for its candidate history to arrive from the worker.
-    pending_jump: Option<(crate::timeline::JumpScope, crate::timeline::JumpDirection)>,
+    pending_jump: Option<PendingJump>,
+    /// Bumped when the commit list is reloaded, so a history load started before that is
+    /// discarded.
+    history_epoch: u64,
+    /// Epoch of the history load currently running on a background thread, if any.
+    history_in_flight: Option<u64>,
+    /// True once `commits` holds the whole history, so there is nothing more to load.
+    history_complete: bool,
     pub highlight_parse_count: usize,
     pub candidate_commits_cache: std::collections::HashMap<CandidateQueryKey, Vec<CommitSummary>>,
     pub last_candidate_query_key: Option<CandidateQueryKey>,
@@ -322,6 +344,9 @@ impl AppState {
             requested_blame: None,
             pending_candidates: None,
             pending_jump: None,
+            history_epoch: 0,
+            history_in_flight: None,
+            history_complete: false,
             highlight_parse_count: 0,
             candidate_commits_cache: std::collections::HashMap::new(),
             last_candidate_query_key: None,
@@ -912,7 +937,21 @@ impl AppState {
     }
 
     pub fn has_pending_background(&self) -> bool {
-        self.pending_candidates.is_some() || self.requested_blame.is_some()
+        self.pending_candidates.is_some()
+            || self.requested_blame.is_some()
+            || self.history_in_flight.is_some()
+    }
+
+    /// Ask a background thread to extend `commits` far enough to include `hash`.
+    fn request_extended_history(&mut self, hash: &str) {
+        if self.history_complete || self.history_in_flight.is_some() {
+            return;
+        }
+        let epoch = self.history_epoch;
+        if let Some(worker) = self.git_worker() {
+            worker.load_history(epoch, hash.to_string());
+            self.history_in_flight = Some(epoch);
+        }
     }
 
     fn git_worker(&mut self) -> Option<&GitWorker> {
@@ -1035,11 +1074,48 @@ impl AppState {
                         }
                     }
                     if is_wanted {
-                        if let Some((scope, direction)) = self.pending_jump.take() {
+                        if let Some(jump) = self
+                            .pending_jump
+                            .take_if(|j| j.waits_for == JumpWait::Candidates)
+                        {
                             // The history this jump was waiting for is in (or could not be
                             // fetched, in which case the jump reports that itself).
-                            self.perform_timeline_jump(scope, direction);
+                            self.perform_timeline_jump(jump.scope, jump.direction);
                             changed = true;
+                        }
+                    }
+                }
+                GitJobResult::History {
+                    epoch,
+                    commits,
+                    complete,
+                } => {
+                    if self.history_in_flight == Some(epoch) {
+                        self.history_in_flight = None;
+                    }
+                    if epoch != self.history_epoch {
+                        continue;
+                    }
+                    if let Some(commits) = commits {
+                        if commits.len() >= self.commits.len() {
+                            self.commits = commits;
+                            self.history_complete = complete;
+                        }
+                    }
+                    if let Some(hash) = self.selected_commit_hash.clone() {
+                        match self.display_commit_position(&hash) {
+                            Some(idx) => self.commit_selected = idx,
+                            // The selection moved further back while this was loading.
+                            None => self.request_extended_history(&hash),
+                        }
+                    }
+                    changed = true;
+                    if self.history_in_flight.is_none() {
+                        if let Some(jump) = self
+                            .pending_jump
+                            .take_if(|j| j.waits_for == JumpWait::History)
+                        {
+                            self.perform_timeline_jump(jump.scope, jump.direction);
                         }
                     }
                 }
@@ -1161,14 +1237,14 @@ impl AppState {
         self.invalidate_modified_status_cache();
 
         if self.display_commit_position(&hash).is_none() {
-            if let Some(repo) = self.repo() {
-                if let Ok(more_commits) = repo.get_commit_history(Some(1000)) {
-                    let has_target = more_commits.iter().any(|c| c.matches_hash(&hash));
-                    if has_target {
-                        self.commits = more_commits.into_iter().map(CommitSummary::from).collect();
-                    } else if let Ok(all_commits) = repo.get_commit_history(None) {
-                        self.commits = all_commits.into_iter().map(CommitSummary::from).collect();
-                    }
+            if self.background_git {
+                // Listing a long history can take over a second; the timeline catches up
+                // when it arrives, and nothing else about this commit depends on it.
+                self.request_extended_history(&hash);
+            } else if let Some(repo) = self.repo() {
+                if let Ok((commits, complete)) = worker::fetch_history_containing(&repo, &hash) {
+                    self.commits = commits;
+                    self.history_complete = complete;
                 }
             }
         }
@@ -1342,6 +1418,9 @@ impl AppState {
 
     pub fn reload_repo_data(&mut self) {
         self.invalidate_background_results();
+        self.history_epoch += 1;
+        self.history_in_flight = None;
+        self.history_complete = false;
         self.blame_cache.clear();
         self.single_line_blame_cache.clear();
         self.invalidate_file_tree_cache();
@@ -1357,7 +1436,7 @@ impl AppState {
             let (files, statuses, commits) = std::thread::scope(|scope| {
                 let files = scope.spawn(|| repo.list_files());
                 let statuses = scope.spawn(|| repo.get_status());
-                let commits = repo.get_commit_history(Some(200));
+                let commits = repo.get_commit_history_brief(Some(200));
                 (files.join(), statuses.join(), commits)
             });
             if let Ok(Ok(files)) = files {
@@ -1871,7 +1950,11 @@ impl AppState {
         if reads_candidates && self.pending_candidates.is_some() {
             if self.background_git {
                 self.dispatch_pending_candidates(true);
-                self.pending_jump = Some((scope, direction));
+                self.pending_jump = Some(PendingJump {
+                    scope,
+                    direction,
+                    waits_for: JumpWait::Candidates,
+                });
                 self.status_message = format!(
                     "Finding {} change in {:?} history...",
                     match direction {
@@ -1883,6 +1966,24 @@ impl AppState {
                 return;
             }
             self.update_candidate_commits_now();
+        }
+
+        // A commit jump steps from the selected commit's row in the commit list. If that
+        // row is still being loaded, wait for it rather than stepping from the wrong place.
+        if scope == crate::timeline::JumpScope::Commit && self.history_in_flight.is_some() {
+            let selection_missing = self
+                .selected_commit_hash
+                .as_deref()
+                .is_some_and(|hash| self.display_commit_position(hash).is_none());
+            if selection_missing {
+                self.pending_jump = Some(PendingJump {
+                    scope,
+                    direction,
+                    waits_for: JumpWait::History,
+                });
+                self.status_message = "Loading commit history...".to_string();
+                return;
+            }
         }
 
         let cached_info: Vec<crate::git::CommitInfo> = match (scope, self.nav_mode) {
