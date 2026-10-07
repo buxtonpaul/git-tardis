@@ -42,7 +42,7 @@ pub fn highlight_viewport(
 
     // 1. Gather capture intervals if query is available
     let mut byte_captures = Vec::new();
-    if let Some(query) = &entry.query {
+    if let Some(query) = entry.query() {
         let mut parser = Parser::new();
         if parser.set_language(&entry.language).is_ok() {
             if let Some(tree) = parser.parse(source_code, None) {

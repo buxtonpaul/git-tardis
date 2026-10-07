@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tree_sitter::{Language, Query};
 
 /// Configuration for loading dynamic grammars via config file.
@@ -26,8 +26,22 @@ pub struct GrammarEntry {
     pub language: Language,
     pub node_kinds: Vec<String>,
     pub query_str: Option<String>,
-    pub query: Option<Query>,
+    query: OnceLock<Option<Query>>,
     pub _lib_handle: Option<Arc<libloading::Library>>,
+}
+
+impl GrammarEntry {
+    /// The compiled highlight query, if the grammar has a valid one. Compiling is slow
+    /// enough to notice at startup, so it happens the first time a language is highlighted.
+    pub fn query(&self) -> Option<&Query> {
+        self.query
+            .get_or_init(|| {
+                self.query_str
+                    .as_deref()
+                    .and_then(|q| Query::new(&self.language, q).ok())
+            })
+            .as_ref()
+    }
 }
 
 /// Central Grammar Registry managing static built-in and dynamic shared-object parsers.
@@ -165,13 +179,12 @@ impl GrammarRegistry {
         node_kinds: Vec<String>,
         query_str: Option<&str>,
     ) {
-        let query = query_str.and_then(|q| Query::new(&language, q).ok());
         let entry = Arc::new(GrammarEntry {
             name: name.to_string(),
             language,
             node_kinds,
             query_str: query_str.map(|s| s.to_string()),
-            query,
+            query: OnceLock::new(),
             _lib_handle: None,
         });
 
@@ -219,11 +232,6 @@ impl GrammarRegistry {
 
         let lib_arc = Arc::new(lib);
 
-        let query = config
-            .query
-            .as_ref()
-            .and_then(|q_str| Query::new(&language, q_str).ok());
-
         let node_kinds = config.node_kinds.clone().unwrap_or_default();
 
         let entry = Arc::new(GrammarEntry {
@@ -231,7 +239,7 @@ impl GrammarRegistry {
             language,
             node_kinds,
             query_str: config.query.clone(),
-            query,
+            query: OnceLock::new(),
             _lib_handle: Some(lib_arc),
         });
 

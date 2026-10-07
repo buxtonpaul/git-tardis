@@ -34,8 +34,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    let interactive = stdout().is_terminal();
+
     let mut app = AppState::new(args.path.clone());
-    load_repo_data(&mut app);
 
     // Apply theme color overrides if supplied via CLI or env
     let bg = args
@@ -49,6 +50,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if bg.is_some() || fg.is_some() {
         app.set_theme_colors(bg, fg);
     }
+
+    // Put something on screen before talking to git, and let blame and candidate lookups
+    // run off the UI thread from the start.
+    let mut terminal = if interactive {
+        enable_raw_mode()?;
+        stdout().execute(EnterAlternateScreen)?;
+        app.in_alternate_screen = true;
+        app.enable_background_git();
+
+        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+        let ready_message =
+            std::mem::replace(&mut app.status_message, "Loading repository...".to_string());
+        terminal.draw(|f| git_tardis::ui::render(f, &mut app))?;
+        app.status_message = ready_message;
+        Some(terminal)
+    } else {
+        None
+    };
+
+    load_repo_data(&mut app);
 
     // If initial target file is specified, open file at specified line
     if let Some(target_file) = &args.file {
@@ -82,21 +103,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut dispatcher = KeyDispatcher::new(registry);
 
-    if !stdout().is_terminal() {
-        println!("Initialized Git-tardis for repository: {:?}", app.repo_path);
-        println!("State status: {}", app.status_message);
-        println!("Non-interactive environment detected. Application loop ready.");
-        return Ok(());
-    }
-
-    // Interactive TUI Execution
-    enable_raw_mode()?;
-    stdout().execute(EnterAlternateScreen)?;
-    app.in_alternate_screen = true;
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-
-    // From here on, blame and candidate lookups that follow the cursor run off the UI thread.
-    app.enable_background_git();
+    let mut terminal = match terminal.take() {
+        Some(terminal) => terminal,
+        None => {
+            println!("Initialized Git-tardis for repository: {:?}", app.repo_path);
+            println!("State status: {}", app.status_message);
+            println!("Non-interactive environment detected. Application loop ready.");
+            return Ok(());
+        }
+    };
 
     run_event_loop(
         &mut terminal,

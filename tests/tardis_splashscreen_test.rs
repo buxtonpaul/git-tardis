@@ -70,3 +70,38 @@ fn test_code_viewer_default_splashscreen_rendering() {
     assert!(dbg.contains("Git-tardis"));
     assert!(dbg.contains("Copyright (c) 2026 Paul Buxton"));
 }
+
+#[test]
+fn test_git_version_arrives_without_blocking_startup() {
+    let mut app = AppState::new(PathBuf::from("."));
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut reported_change = false;
+    while app.git_version.is_none() {
+        reported_change |= app.poll_background();
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for git version"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    assert!(reported_change, "arrival should request a redraw");
+    assert!(app
+        .git_version
+        .as_deref()
+        .unwrap()
+        .starts_with("git version"));
+    assert!(!app.poll_background(), "nothing further to report");
+}
+
+#[test]
+fn test_explicit_git_version_is_not_overwritten() {
+    let mut app = AppState::new(PathBuf::from("."));
+    app.git_version = Some("git version 0.0.0-test".to_string());
+
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    app.poll_background();
+
+    assert_eq!(app.git_version.as_deref(), Some("git version 0.0.0-test"));
+}

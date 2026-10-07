@@ -238,3 +238,28 @@ fn test_viewport_highlight_and_span_merging() {
         .any(|s| s.capture_name == "keyword");
     assert!(contains_keyword);
 }
+
+#[test]
+fn test_highlight_query_is_compiled_on_first_use() {
+    use git_tardis::treesitter::GrammarRegistry;
+    use std::time::Instant;
+
+    let started = Instant::now();
+    let registry = GrammarRegistry::new();
+    let build_time = started.elapsed();
+
+    for ext in ["rs", "c", "cpp", "go", "py", "ts", "tsx", "lua"] {
+        let entry = registry
+            .get_by_extension(ext)
+            .unwrap_or_else(|| panic!("no grammar for .{}", ext));
+        assert!(
+            entry.query().is_some(),
+            "highlight query for .{} should compile",
+            ext
+        );
+        // A second call returns the same compiled query rather than compiling again.
+        assert!(std::ptr::eq(entry.query().unwrap(), entry.query().unwrap()));
+    }
+
+    println!("GrammarRegistry::new() took {:?}", build_time);
+}

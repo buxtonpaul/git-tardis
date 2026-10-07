@@ -67,6 +67,7 @@ pub fn parse_color(s: &str) -> Option<Color> {
 }
 
 pub fn render(frame: &mut Frame, state: &mut AppState) {
+    state.poll_git_version();
     if let Some(bg_color) = state.theme_bg {
         let base_style = match state.theme_fg {
             Some(fg_color) => Style::default().bg(bg_color).fg(fg_color),

@@ -93,6 +93,12 @@ pub fn get_rebase_upstream(dir: &Path, commit_hash: &str) -> Result<String, Stri
 
 /// Resolve the exact Git directory for a repository path
 pub fn get_git_dir(repo_path: &Path) -> PathBuf {
+    // An ordinary checkout keeps its git directory right here; asking git is only needed
+    // for worktrees, submodules, subdirectories or an overridden GIT_DIR.
+    let dot_git = repo_path.join(".git");
+    if dot_git.is_dir() && std::env::var_os("GIT_DIR").is_none() {
+        return dot_git;
+    }
     let repo = crate::git::GitRepo::new(repo_path);
     repo.git_dir().unwrap_or_else(|_| repo_path.join(".git"))
 }

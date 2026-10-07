@@ -76,6 +76,9 @@ fn test_poll_background_is_inert_without_background_git() {
         Some("Commit 2")
     );
     assert!(!app.has_pending_background());
+
+    // The only thing that can still arrive is the git version looked up at startup.
+    wait_for(&mut app, "git version", |a| a.git_version.is_some());
     assert!(!app.poll_background());
 }
 

@@ -168,6 +168,8 @@ pub struct AppState {
     pub show_help: bool,
     pub show_splashscreen: bool,
     pub git_version: Option<String>,
+    /// Delivers `git --version`, which is looked up off the startup path.
+    git_version_rx: Option<std::sync::mpsc::Receiver<Option<String>>>,
 
     pub theme_bg: Option<ratatui::style::Color>,
     pub theme_fg: Option<ratatui::style::Color>,
@@ -228,17 +230,22 @@ pub struct AppState {
 impl AppState {
     pub fn new(repo_path: PathBuf) -> Self {
         let repo = GitRepo::open(&repo_path).ok();
-        let git_version = std::process::Command::new("git")
-            .arg("--version")
-            .output()
-            .ok()
-            .and_then(|out| String::from_utf8(out.stdout).ok())
-            .map(|s| s.trim().to_string());
+        let (git_version_tx, git_version_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let version = std::process::Command::new("git")
+                .arg("--version")
+                .output()
+                .ok()
+                .and_then(|out| String::from_utf8(out.stdout).ok())
+                .map(|s| s.trim().to_string());
+            let _ = git_version_tx.send(version);
+        });
 
         Self {
             repo_path,
             repo,
-            git_version,
+            git_version: None,
+            git_version_rx: Some(git_version_rx),
             active_panel: ActivePanel::Sidebar,
             sidebar_view: SidebarView::FileExplorer,
             timeline_filter: TimelineFilter::All,
@@ -938,11 +945,28 @@ impl AppState {
         self.pending_candidates = None;
     }
 
+    /// Pick up `git --version` once its lookup has finished. Returns true when
+    /// `git_version` was filled in. A version that was set explicitly is left alone.
+    pub fn poll_git_version(&mut self) -> bool {
+        let received = match self.git_version_rx.as_ref().map(|rx| rx.try_recv()) {
+            Some(Ok(version)) => version,
+            Some(Err(std::sync::mpsc::TryRecvError::Empty)) => return false,
+            Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) | None => None,
+        };
+        self.git_version_rx = None;
+        if self.git_version.is_none() && received.is_some() {
+            self.git_version = received;
+            return true;
+        }
+        false
+    }
+
     /// Send due background queries and apply finished ones. Returns true when visible state
     /// changed and the screen should be redrawn.
     pub fn poll_background(&mut self) -> bool {
+        let version_arrived = self.poll_git_version();
         if !self.background_git {
-            return false;
+            return version_arrived;
         }
 
         let due = self
@@ -960,7 +984,7 @@ impl AppState {
             }
         }
 
-        let mut changed = false;
+        let mut changed = version_arrived;
         while let Some(result) = self.git_worker.as_ref().and_then(|w| w.try_recv()) {
             match result {
                 GitJobResult::Blame { epoch, key, lines } => {
@@ -1243,16 +1267,23 @@ impl AppState {
         self.diff_between_cache.clear();
         self.modified_files_cache.clear();
         if let Some(repo) = self.repo() {
-            if let Ok(files) = repo.list_files() {
+            // The three listings are independent git processes, so run them side by side.
+            let (files, statuses, commits) = std::thread::scope(|scope| {
+                let files = scope.spawn(|| repo.list_files());
+                let statuses = scope.spawn(|| repo.get_status());
+                let commits = repo.get_commit_history(Some(200));
+                (files.join(), statuses.join(), commits)
+            });
+            if let Ok(Ok(files)) = files {
                 self.files = files;
                 self.pending_files_commit = None;
             }
-            if let Ok(statuses) = repo.get_status() {
+            if let Ok(Ok(statuses)) = statuses {
                 let items: Vec<ModifiedFileEntry> =
                     statuses.into_iter().map(ModifiedFileEntry::from).collect();
                 self.dirty_files = items;
             }
-            if let Ok(commits) = repo.get_commit_history(Some(200)) {
+            if let Ok(commits) = commits {
                 self.commits = commits.into_iter().map(CommitSummary::from).collect();
             }
             self.load_currently_selected_file();
