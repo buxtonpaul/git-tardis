@@ -2,12 +2,14 @@ pub mod blame;
 pub mod diff;
 pub mod diff_parser;
 pub mod log;
+pub mod program;
 pub mod status;
 pub mod types;
 
 pub use blame::*;
 pub use diff_parser::*;
 pub use log::*;
+pub use program::{git_program, prime_git_program};
 pub use types::*;
 
 use std::path::{Path, PathBuf};
@@ -75,7 +77,7 @@ impl GitRepo {
 
     /// Execute a raw `git` command in the working directory and return stdout bytes.
     pub(crate) fn run_git_bytes(&self, args: &[&str]) -> Result<Vec<u8>, GitError> {
-        let output = std::process::Command::new("git")
+        let output = std::process::Command::new(git_program())
             .current_dir(&self.work_dir)
             .args(args)
             .output()?;

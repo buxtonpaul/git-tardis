@@ -232,7 +232,7 @@ impl AppState {
         let repo = GitRepo::open(&repo_path).ok();
         let (git_version_tx, git_version_rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let version = std::process::Command::new("git")
+            let version = std::process::Command::new(crate::git::git_program())
                 .arg("--version")
                 .output()
                 .ok()

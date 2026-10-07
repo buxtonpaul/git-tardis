@@ -15,6 +15,9 @@ fn load_repo_data(app: &mut AppState) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Locate the real git binary while the rest of startup runs.
+    git_tardis::git::prime_git_program();
+
     let args = CliArgs::parse_args();
     let config = Config::load_or_default(args.config.as_deref());
 

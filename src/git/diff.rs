@@ -83,7 +83,7 @@ impl GitRepo {
 
     /// Retrieve patch diff for an untracked file (`git diff --no-index /dev/null <path>`).
     pub fn get_untracked_diff(&self, path: &str) -> Result<String, GitError> {
-        let output = std::process::Command::new("git")
+        let output = std::process::Command::new(super::git_program())
             .current_dir(&self.work_dir)
             .args(["diff", "--no-index", "/dev/null", path])
             .output()?;
