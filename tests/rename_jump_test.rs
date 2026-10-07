@@ -228,3 +228,133 @@ fn test_candidates_stay_stable_while_viewing_the_old_path() {
         "Commit 2"
     );
 }
+
+#[test]
+fn test_file_history_continues_across_the_rename() {
+    let dir = setup_repo();
+    let repo = GitRepo::open(dir.path()).unwrap();
+
+    let commits = repo.get_file_commits("src/new.rs", None).unwrap();
+
+    let seen: Vec<(&str, Option<&str>)> = commits
+        .iter()
+        .map(|c| (c.summary.as_str(), c.path.as_deref()))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            ("Commit 4", Some("src/new.rs")),
+            ("Commit 3", Some("src/new.rs")),
+            ("Commit 2", Some("old.rs")),
+            ("Commit 1", Some("old.rs")),
+        ]
+    );
+}
+
+#[test]
+fn test_directory_history_is_not_followed() {
+    let dir = setup_repo();
+    let repo = GitRepo::open(dir.path()).unwrap();
+
+    // Commit 3 moved the file into src/ and Commit 4 changed it there.
+    let commits = repo.get_file_commits("src", None).unwrap();
+
+    let seen: Vec<(&str, Option<&str>)> = commits
+        .iter()
+        .map(|c| (c.summary.as_str(), c.path.as_deref()))
+        .collect();
+    assert_eq!(seen, [("Commit 4", None), ("Commit 3", None)]);
+}
+
+#[test]
+fn test_file_jump_crosses_rename_and_returns() {
+    let dir = setup_repo();
+    let mut app = open_on_alpha_body(&dir, NavigationMode::File, SidebarView::CommitTimeline);
+    let history: Vec<String> = app
+        .candidate_commits
+        .iter()
+        .map(|c| c.message.clone())
+        .collect();
+    assert_eq!(history, ["Commit 4", "Commit 3", "Commit 2", "Commit 1"]);
+
+    // HEAD is Commit 4, so the first step back is Commit 3, still under the new path.
+    app.dispatch_action(Action::JumpPrevFile);
+    assert!(
+        app.status_message.contains("Commit 3"),
+        "{}",
+        app.status_message
+    );
+    assert_eq!(app.active_file.as_deref(), Some("src/new.rs"));
+    assert_eq!(app.code_lines, lines(V2));
+
+    // Commit 2 is before the move.
+    app.dispatch_action(Action::JumpPrevFile);
+    assert!(
+        app.status_message.contains("Commit 2"),
+        "{}",
+        app.status_message
+    );
+    assert_eq!(app.active_file.as_deref(), Some("old.rs"));
+    assert_eq!(app.code_lines, lines(V2));
+    assert_eq!(app.history_file_path().as_deref(), Some("src/new.rs"));
+    assert_eq!(
+        app.candidate_commits[app.candidate_selected].message,
+        "Commit 2"
+    );
+
+    app.dispatch_action(Action::JumpPrevFile);
+    assert!(
+        app.status_message.contains("Commit 1"),
+        "{}",
+        app.status_message
+    );
+    assert_eq!(app.active_file.as_deref(), Some("old.rs"));
+    assert_eq!(app.code_lines, lines(V1));
+
+    // Forward again, back over the move, and out to the working tree.
+    app.dispatch_action(Action::JumpNextFile);
+    assert_eq!(app.active_file.as_deref(), Some("old.rs"));
+    app.dispatch_action(Action::JumpNextFile);
+    assert!(
+        app.status_message.contains("Commit 3"),
+        "{}",
+        app.status_message
+    );
+    assert_eq!(app.active_file.as_deref(), Some("src/new.rs"));
+    app.dispatch_action(Action::JumpNextFile);
+    assert!(
+        app.status_message.contains("Commit 4"),
+        "{}",
+        app.status_message
+    );
+    app.dispatch_action(Action::JumpNextFile);
+    assert_eq!(app.selected_commit_hash, None);
+    assert_eq!(app.active_file.as_deref(), Some("src/new.rs"));
+    assert_eq!(app.code_lines, lines(V4));
+}
+
+#[test]
+fn test_file_history_does_not_follow_a_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q"]);
+    git(p, &["config", "user.name", "Test User"]);
+    git(p, &["config", "user.email", "test@example.com"]);
+
+    // template.txt and copy.txt start with identical content, which `--follow` would
+    // otherwise treat as one file's history.
+    std::fs::write(p.join("template.txt"), "shared text\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "Add template"]);
+    std::fs::write(p.join("copy.txt"), "shared text\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-q", "-m", "Add copy"]);
+    std::fs::write(p.join("copy.txt"), "changed text\n").unwrap();
+    git(p, &["commit", "-q", "-am", "Change copy"]);
+
+    let repo = GitRepo::open(p).unwrap();
+    let commits = repo.get_file_commits("copy.txt", None).unwrap();
+
+    let seen: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
+    assert_eq!(seen, ["Change copy", "Add copy"]);
+}

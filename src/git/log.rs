@@ -38,7 +38,8 @@ impl GitRepo {
         parse_commit_log(&output)
     }
 
-    /// Retrieve commit history that modified a specific file path.
+    /// Retrieve commit history that modified a specific file path, continuing through
+    /// renames of the file. Each commit records the path the file had at that commit.
     pub fn get_file_commits(
         &self,
         path: &str,
@@ -49,6 +50,61 @@ impl GitRepo {
             return Ok(Vec::new());
         }
 
+        // A directory has no single path to follow, so it keeps the plain path-limited log.
+        if self.work_dir.join(clean_path).is_dir() {
+            return self.file_commits_segment(None, clean_path, max_count);
+        }
+
+        // Follow the file back through renames one name at a time: list the commits under
+        // the current name, and if that list ends at a commit which renamed the file,
+        // carry on from that commit's parent under the previous name. Each commit records
+        // the name the file had there.
+        //
+        // `git log --follow` does this in one command but is several times slower on a
+        // large repository, and it also follows copies, so a file created with the same
+        // content as another would inherit that file's history.
+        let mut commits: Vec<CommitInfo> = Vec::new();
+        let mut start: Option<String> = None;
+        let mut name = clean_path.to_string();
+
+        for _ in 0..MAX_FOLLOWED_RENAMES {
+            let remaining = max_count.map(|limit| limit.saturating_sub(commits.len()));
+            if remaining == Some(0) {
+                break;
+            }
+            let mut segment = self.file_commits_segment(start.as_deref(), &name, remaining)?;
+            let oldest = match segment.last() {
+                Some(commit) => commit.hash.clone(),
+                None => break,
+            };
+            let hit_limit = remaining == Some(segment.len());
+            for commit in &mut segment {
+                commit.path = Some(name.clone());
+            }
+            commits.append(&mut segment);
+
+            if hit_limit {
+                break;
+            }
+            match self.renamed_from(&oldest, &name) {
+                Some(previous_name) => {
+                    start = Some(format!("{}^", oldest));
+                    name = previous_name;
+                }
+                None => break,
+            }
+        }
+
+        Ok(commits)
+    }
+
+    /// Commits touching `path`, newest first, starting from `start` (HEAD when `None`).
+    fn file_commits_segment(
+        &self,
+        start: Option<&str>,
+        path: &str,
+        max_count: Option<usize>,
+    ) -> Result<Vec<CommitInfo>, GitError> {
         let mut args = vec![
             "log",
             "--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b%x1e",
@@ -58,11 +114,48 @@ impl GitRepo {
             max_count_str = format!("-n{}", count);
             args.push(&max_count_str);
         }
+        if let Some(rev) = start {
+            args.push(rev);
+        }
         args.push("--");
-        args.push(clean_path);
+        args.push(path);
 
         let output = self.run_git(&args)?;
         parse_commit_log(&output)
+    }
+
+    /// If `commit` created `path` by renaming another file, the name it had before.
+    fn renamed_from(&self, commit: &str, path: &str) -> Option<String> {
+        let bytes = self
+            .run_git_bytes(&[
+                "diff-tree",
+                "-z",
+                "--no-commit-id",
+                "--name-status",
+                "-r",
+                "-M",
+                "--root",
+                commit,
+            ])
+            .ok()?;
+
+        let mut fields = bytes.split(|&b| b == 0);
+        while let Some(status) = fields.next() {
+            if status.is_empty() {
+                continue;
+            }
+            // Renames and copies list two paths (old, new); everything else lists one.
+            if status[0] == b'R' || status[0] == b'C' {
+                let old = fields.next()?;
+                let new = fields.next()?;
+                if status[0] == b'R' && new == path.as_bytes() {
+                    return Some(String::from_utf8_lossy(old).to_string());
+                }
+            } else {
+                fields.next()?;
+            }
+        }
+        None
     }
 
     /// Retrieve commit history that modified a specific line range in a file.
@@ -105,15 +198,24 @@ impl GitRepo {
 /// Parse `git log -L` output where each commit is `\x1d<fields>\x1e<patch>`, recording the
 /// path the file had at each commit.
 pub fn parse_line_commit_log(raw_log: &str) -> Result<Vec<CommitInfo>, GitError> {
+    parse_marked_commit_log(raw_log, path_from_patch_header)
+}
+
+/// Parse log output where each commit is `\x1d<fields>\x1e<trailer>`, using `path_of` to
+/// read the file's path at that commit out of the trailer.
+fn parse_marked_commit_log(
+    raw_log: &str,
+    path_of: fn(&str) -> Option<String>,
+) -> Result<Vec<CommitInfo>, GitError> {
     let mut commits = Vec::new();
 
     for chunk in raw_log.split('\x1d') {
-        let (record, patch) = match chunk.split_once('\x1e') {
+        let (record, trailer) = match chunk.split_once('\x1e') {
             Some(parts) => parts,
             None => continue,
         };
         if let Some(mut commit) = parse_commit_log(record)?.into_iter().next() {
-            commit.path = path_from_patch_header(patch);
+            commit.path = path_of(trailer);
             commits.push(commit);
         }
     }
@@ -134,6 +236,9 @@ fn path_from_patch_header(patch: &str) -> Option<String> {
     }
     None
 }
+
+/// Upper bound on how many renames of one file are followed, as a guard against cycles.
+const MAX_FOLLOWED_RENAMES: usize = 32;
 
 pub fn parse_commit_log(raw_log: &str) -> Result<Vec<CommitInfo>, GitError> {
     let mut commits = Vec::new();
