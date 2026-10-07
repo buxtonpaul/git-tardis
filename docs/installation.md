@@ -1,6 +1,6 @@
 # Installation Guide: Git-tardis
 
-This guide covers installing **Git-tardis** on macOS and Linux via Homebrew or building directly from source code.
+This guide covers installing **Git-tardis** on macOS and Linux via Homebrew, on Windows from a release archive, or building directly from source code.
 
 ---
 
@@ -35,7 +35,49 @@ brew upgrade git-tardis
 
 ---
 
-## 2. Building & Installing from Source
+## 2. Installation on Windows
+
+Git-tardis needs [Git for Windows](https://git-scm.com/download/win) with `git` available on your `PATH`. [Windows Terminal](https://aka.ms/terminal) is recommended; the older console host may not draw every symbol.
+
+### Option A: Release archive
+
+1. Download `git-tardis-x86_64-pc-windows-msvc.zip` from the [latest release](https://github.com/buxtonpaul/git-tardis/releases/latest).
+2. Extract it to a folder of your choice, for example `%LOCALAPPDATA%\Programs\git-tardis`.
+3. Add that folder to your `PATH`.
+
+In PowerShell:
+
+```powershell
+$dest = "$env:LOCALAPPDATA\Programs\git-tardis"
+Invoke-WebRequest https://github.com/buxtonpaul/git-tardis/releases/latest/download/git-tardis-x86_64-pc-windows-msvc.zip -OutFile git-tardis.zip
+Expand-Archive git-tardis.zip -DestinationPath $dest -Force
+[Environment]::SetEnvironmentVariable("Path", "$([Environment]::GetEnvironmentVariable('Path', 'User'));$dest", "User")
+```
+
+Open a new terminal and verify the installation:
+
+```powershell
+git-tardis --version
+```
+
+The archive's SHA-256 checksum is published next to it as `git-tardis-x86_64-pc-windows-msvc.zip.sha256`. The executable is self-contained and does not need the Visual C++ redistributable.
+
+### Option B: Cargo
+
+With the [Rust toolchain](https://rustup.rs) and the Visual Studio C++ build tools installed:
+
+```powershell
+cargo install --git https://github.com/buxtonpaul/git-tardis
+```
+
+### Notes for Windows
+
+- **Configuration file:** `%APPDATA%\git-tardis\config.toml`. If `HOME` is set, as it is in Git Bash, `%HOME%\.config\git-tardis\config.toml` is used instead.
+- **Edit Here:** the paused-rebase shell is `cmd.exe` (from `COMSPEC`), or `$SHELL` when that is set. Type `exit` to resume.
+
+---
+
+## 3. Building & Installing from Source
 
 If you prefer to compile Git-tardis manually or contribute to development:
 
@@ -80,7 +122,7 @@ git-tardis --version
 
 ---
 
-## 3. Neovim Plugin Setup (`git-tardis.nvim`)
+## 4. Neovim Plugin Setup (`git-tardis.nvim`)
 
 Git-tardis includes a native Neovim plugin launcher (`git-tardis.nvim`) that opens Git-tardis in a floating terminal window with automatic editor position and theme synchronization over Neovim RPC (`$NVIM`).
 
@@ -128,7 +170,7 @@ lua require('git-tardis').setup()
 
 ---
 
-## 4. Basic CLI Usage
+## 5. Basic CLI Usage
 
 Launch Git-tardis in the current repository:
 

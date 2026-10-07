@@ -27,7 +27,11 @@ brew tap buxtonpaul/tap
 brew install git-tardis
 ```
 
-### Option 2: Cargo / Build from Source
+### Option 2: Windows
+
+Download `git-tardis-x86_64-pc-windows-msvc.zip` from the [latest release](https://github.com/buxtonpaul/git-tardis/releases/latest), extract it and add the folder to your `PATH`. Git for Windows is required. See the [Installation Guide](docs/installation.md) for a PowerShell one-liner and notes.
+
+### Option 3: Cargo / Build from Source
 
 Ensure you have the Rust toolchain installed:
 
