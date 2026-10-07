@@ -328,7 +328,12 @@ fn test_get_commit_files() {
 fn test_get_commit_files_special_filenames_and_renames() {
     let (_dir, repo) = setup_test_repo();
 
-    let special_filename = "file with spaces and\ttabs.txt";
+    // Windows does not allow tab characters in file names.
+    let special_filename = if cfg!(windows) {
+        "file with spaces and tabs.txt"
+    } else {
+        "file with spaces and\ttabs.txt"
+    };
     commit_file(&repo, special_filename, "special content", "Commit Special");
 
     let history = repo.get_commit_history(Some(1)).unwrap();
