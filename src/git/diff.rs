@@ -103,6 +103,40 @@ impl GitRepo {
         self.run_git(&["show", &target])
     }
 
+    /// Like `get_diff_between`, for a file whose path differs between the two states. The
+    /// two versions are compared as blobs, so the result does not depend on git recognising
+    /// the rename, which it often cannot across distant history.
+    pub fn get_diff_between_paths(
+        &self,
+        from_hash: Option<&str>,
+        to_hash: Option<&str>,
+        from_path: &str,
+        to_path: &str,
+    ) -> Result<String, GitError> {
+        if from_path == to_path {
+            return self.get_diff_between(from_hash, to_hash, to_path);
+        }
+        match (from_hash, to_hash) {
+            (Some(h1), Some(h2)) => {
+                let from_blob = format!("{}:{}", h1, from_path);
+                let to_blob = format!("{}:{}", h2, to_path);
+                self.run_git(&["diff", &from_blob, &to_blob])
+            }
+            (Some(h1), None) => {
+                let from_blob = format!("{}:{}", h1, from_path);
+                self.run_git(&["diff", &from_blob, to_path])
+            }
+            (None, Some(h2)) => {
+                // git can only put the working-tree file on the new side of a blob diff, so
+                // diff the other way round and flip the result.
+                let to_blob = format!("{}:{}", h2, to_path);
+                let forward = self.run_git(&["diff", &to_blob, from_path])?;
+                Ok(super::diff_parser::reverse_unified_diff(&forward))
+            }
+            (None, None) => Ok(String::new()),
+        }
+    }
+
     /// Retrieve patch diff between two commits/states for a specific path (`git diff <from> <to> -- <path>`).
     pub fn get_diff_between(
         &self,

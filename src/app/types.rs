@@ -65,6 +65,10 @@ pub struct CommitSummary {
     pub hash: String,
     pub short_hash: String,
     pub message: String,
+    /// Path the file had at this commit, when it is known to differ from query to query
+    /// (see `CommitInfo::path`).
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 impl CommitSummary {
@@ -77,6 +81,7 @@ impl CommitSummary {
             hash: hash.into(),
             short_hash: short_hash.into(),
             message: message.into(),
+            path: None,
         }
     }
 
@@ -85,6 +90,7 @@ impl CommitSummary {
             hash: DIRTY_COMMIT_HASH.to_string(),
             short_hash: "*DIRTY*".to_string(),
             message: "Working Directory (Uncommitted Changes)".to_string(),
+            path: None,
         }
     }
 
@@ -128,6 +134,7 @@ impl From<crate::git::CommitInfo> for CommitSummary {
             hash: c.hash,
             short_hash: c.short_hash,
             message: c.summary,
+            path: c.path,
         }
     }
 }
@@ -138,6 +145,7 @@ impl From<&crate::git::CommitInfo> for CommitSummary {
             hash: c.hash.clone(),
             short_hash: c.short_hash.clone(),
             message: c.summary.clone(),
+            path: c.path.clone(),
         }
     }
 }
@@ -152,6 +160,7 @@ impl From<&CommitSummary> for crate::git::CommitInfo {
             date: String::new(),
             summary: s.message.clone(),
             body: String::new(),
+            path: s.path.clone(),
         }
     }
 }
@@ -167,6 +176,7 @@ impl From<(String, String)> for CommitSummary {
             hash,
             short_hash,
             message,
+            path: None,
         }
     }
 }
@@ -183,6 +193,7 @@ impl From<(&str, &str)> for CommitSummary {
             hash: hash_str,
             short_hash,
             message: message.to_string(),
+            path: None,
         }
     }
 }
@@ -274,6 +285,7 @@ mod tests {
             date: "2026-01-01".to_string(),
             summary: "Initial commit".to_string(),
             body: "".to_string(),
+            path: None,
         };
 
         let summary = CommitSummary::from(info);

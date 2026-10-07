@@ -54,6 +54,10 @@ pub struct CommitInfo {
     pub date: String,
     pub summary: String,
     pub body: String,
+    /// Path the file had at this commit, when the query that produced the commit follows
+    /// renames (line-range history). `None` means the path that was asked for.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 impl CommitInfo {

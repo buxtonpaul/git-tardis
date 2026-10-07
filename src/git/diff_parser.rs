@@ -196,6 +196,49 @@ pub fn resolve_file_line_number(code_lines: &[String], cursor_line: usize) -> us
     current_new_line
 }
 
+/// Turn a unified diff from A to B into the equivalent diff from B to A: hunk ranges are
+/// swapped, and added and removed lines trade places, with removals kept ahead of additions
+/// inside each change.
+pub fn reverse_unified_diff(diff_text: &str) -> String {
+    fn flush(out: &mut String, removed: &mut Vec<String>, added: &mut Vec<String>) {
+        for line in removed.drain(..).chain(added.drain(..)) {
+            out.push_str(&line);
+            out.push('\n');
+        }
+    }
+
+    let mut out = String::with_capacity(diff_text.len());
+    let mut removed: Vec<String> = Vec::new();
+    let mut added: Vec<String> = Vec::new();
+
+    for line in diff_text.lines() {
+        if let Some(rest) = line.strip_prefix('+').filter(|_| !line.starts_with("+++")) {
+            removed.push(format!("-{}", rest));
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix('-').filter(|_| !line.starts_with("---")) {
+            added.push(format!("+{}", rest));
+            continue;
+        }
+        flush(&mut out, &mut removed, &mut added);
+
+        match parse_hunk_header(line).filter(|_| line.starts_with("@@")) {
+            Some((old_start, old_count, new_start, new_count)) => {
+                let tail = line[2..].find("@@").map(|i| &line[i + 4..]).unwrap_or("");
+                out.push_str(&format!(
+                    "@@ -{},{} +{},{} @@{}",
+                    new_start, new_count, old_start, old_count, tail
+                ));
+            }
+            None => out.push_str(line),
+        }
+        out.push('\n');
+    }
+    flush(&mut out, &mut removed, &mut added);
+
+    out
+}
+
 /// Map a 1-based line number in version A to its corresponding 1-based line number in version B
 /// using unified diff text between version A and version B.
 pub fn map_line_number(diff_text: &str, old_line: usize) -> usize {
@@ -363,6 +406,44 @@ index 1234567..89abcde 100644
 
         // Context line 13
         assert_eq!(resolve_file_line_number(&diff_lines, 10), 13);
+    }
+
+    #[test]
+    fn test_reverse_unified_diff_inverts_line_mapping() {
+        let forward = "\
+diff --git a/old.rs b/new.rs
+--- a/old.rs
++++ b/new.rs
+@@ -1,5 +1,7 @@ fn ctx()
++inserted 1
++inserted 2
+ one
+-two
++TWO
+ three
+ four
+ five
+@@ -20,3 +22,2 @@
+ twenty
+-twenty-one
+ twenty-two
+";
+        // Forward: old line -> new line.
+        assert_eq!(map_line_number(forward, 1), 3);
+        assert_eq!(map_line_number(forward, 2), 4);
+        assert_eq!(map_line_number(forward, 5), 7);
+        assert_eq!(map_line_number(forward, 22), 23);
+
+        let reversed = reverse_unified_diff(forward);
+        assert!(reversed.contains("@@ -1,7 +1,5 @@ fn ctx()"));
+        assert!(reversed.contains("@@ -22,2 +20,3 @@"));
+        assert!(reversed.contains("-TWO\n+two\n"));
+
+        // Reversed: new line -> old line.
+        assert_eq!(map_line_number(&reversed, 3), 1);
+        assert_eq!(map_line_number(&reversed, 4), 2);
+        assert_eq!(map_line_number(&reversed, 7), 5);
+        assert_eq!(map_line_number(&reversed, 23), 22);
     }
 
     #[test]

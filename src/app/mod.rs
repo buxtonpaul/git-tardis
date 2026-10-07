@@ -112,6 +112,15 @@ pub const CANDIDATE_DEBOUNCE: std::time::Duration = std::time::Duration::from_mi
 /// Upper bound on full-file blame results kept when blame is loaded in the background.
 const BACKGROUND_BLAME_CACHE_LIMIT: usize = 16;
 
+/// The active file while time travelling to a commit where it had a different path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RenamedFile {
+    /// Path of the file in the working tree, used for history queries.
+    origin: String,
+    /// Path of the file at the selected commit, which is what `active_file` holds.
+    current: String,
+}
+
 /// A candidate query that has been deferred to the background worker.
 #[derive(Debug, Clone)]
 struct PendingCandidates {
@@ -191,6 +200,10 @@ pub struct AppState {
     highlight_cache: Option<HighlightCache>,
     /// Commit whose tree listing has not been loaded into `files` yet.
     pending_files_commit: Option<String>,
+    renamed_file: Option<RenamedFile>,
+    /// Path shown before a jump or reset that changed the file's path, so the next load can
+    /// still carry the cursor across.
+    path_before_rename: Option<String>,
     /// When set, cursor-driven blame and candidate queries run on a worker thread and are
     /// applied by `poll_background`. Off by default so library callers stay synchronous.
     background_git: bool,
@@ -292,6 +305,8 @@ impl AppState {
             modified_status_cache: std::cell::RefCell::new(None),
             highlight_cache: None,
             pending_files_commit: None,
+            renamed_file: None,
+            path_before_rename: None,
             background_git: false,
             git_worker: None,
             background_epoch: 0,
@@ -716,7 +731,7 @@ impl AppState {
 
     fn refresh_candidate_commits(&mut self, allow_defer: bool) {
         self.ensure_repo();
-        let cur_file = self.current_file_path();
+        let cur_file = self.history_file_path();
 
         let key = match self.nav_mode {
             NavigationMode::Commit => CandidateQueryKey::Commit {
@@ -1057,7 +1072,7 @@ impl AppState {
         let mut display_cands = self.display_candidate_commits();
         if !display_cands.iter().any(|c| c.matches_hash(&hash)) {
             if let Some(repo) = self.repo() {
-                if let Some(file_path) = self.current_file_path() {
+                if let Some(file_path) = self.history_file_path() {
                     let limit = Some(1000);
                     let res = match self.nav_mode {
                         NavigationMode::Commit => repo.get_commit_history(limit),
@@ -1164,11 +1179,20 @@ impl AppState {
         self.ensure_repo();
         self.selected_commit_hash = None;
         self.pending_files_commit = None;
+        if let Some(renamed) = self.renamed_file.take() {
+            // Return to the file under the name it has in the working tree.
+            if self.active_file.as_ref() == Some(&renamed.current) {
+                self.path_before_rename = Some(renamed.current);
+                self.active_file = Some(renamed.origin);
+            }
+        }
         self.commit_selected = 0;
         self.candidate_selected = 0;
         if let Some(repo) = self.repo() {
             if let Ok(wd_files) = repo.list_files() {
                 self.files = wd_files;
+                // The cached tree still describes the commit being left.
+                self.invalidate_file_tree_cache();
                 if let Some(cur_file) = self.current_file_path() {
                     let items = self.visible_file_items();
                     if let Some(f_idx) = items.iter().position(|it| it.path == cur_file) {
@@ -1498,8 +1522,14 @@ impl AppState {
             }
         }
 
+        // A jump across a rename shows the same file under another path; keep the cursor.
+        let renamed_from = self
+            .path_before_rename
+            .take()
+            .filter(|prev| self.last_loaded_file.as_ref() == Some(prev));
+
         if let Some(new_lines) = loaded_lines {
-            let same_file = self.last_loaded_file == clean_path;
+            let same_file = self.last_loaded_file == clean_path || renamed_from.is_some();
             let same_commit = self.last_loaded_commit == target_commit;
             let same_view_mode = self.last_loaded_view_mode == Some(target_view_mode);
 
@@ -1524,9 +1554,10 @@ impl AppState {
                             let fetched = self
                                 .repo()
                                 .and_then(|repo| {
-                                    repo.get_diff_between(
+                                    repo.get_diff_between_paths(
                                         self.last_loaded_commit.as_deref(),
                                         target_commit.as_deref(),
+                                        renamed_from.as_deref().unwrap_or(path),
                                         path,
                                     )
                                     .ok()
@@ -1635,6 +1666,16 @@ impl AppState {
         }
     }
 
+    /// Path to use for history queries on the current file. This is the working-tree path
+    /// even when the file is being shown under an older name at the selected commit.
+    pub fn history_file_path(&self) -> Option<String> {
+        let current = self.current_file_path()?;
+        match &self.renamed_file {
+            Some(renamed) if renamed.current == current => Some(renamed.origin.clone()),
+            _ => Some(current),
+        }
+    }
+
     pub fn current_file_path(&self) -> Option<String> {
         if let Some(f) = &self.active_file {
             return Some(f.clone());
@@ -1682,12 +1723,20 @@ impl AppState {
         scope: crate::timeline::JumpScope,
         direction: crate::timeline::JumpDirection,
     ) {
-        let file_path = match self.current_file_path() {
+        let displayed_path = match self.current_file_path() {
             Some(path) => path,
             None => {
                 self.status_message = "No file selected for timeline jump".to_string();
                 return;
             }
+        };
+        // File, function and line history is queried from the working tree, so it is keyed
+        // by the file's working-tree path. A commit jump stays on whatever is displayed.
+        let file_path = if scope == crate::timeline::JumpScope::Commit {
+            displayed_path.clone()
+        } else {
+            self.history_file_path()
+                .unwrap_or_else(|| displayed_path.clone())
         };
 
         // A jump must use the candidates for the current cursor position, so resolve any
@@ -1741,8 +1790,31 @@ impl AppState {
                     (result.file_path.clone(), result.commit_hash.clone()),
                     result.code_lines,
                 );
-                self.update_state_for_commit_hash(result.commit_hash);
+                if scope != crate::timeline::JumpScope::Commit {
+                    if result.file_path != displayed_path {
+                        self.path_before_rename = Some(displayed_path);
+                        // Keep the file selectable in the explorer under its other path.
+                        let mut dir = String::new();
+                        let mut parts: Vec<&str> = result.file_path.split('/').collect();
+                        parts.pop();
+                        for part in parts {
+                            if !dir.is_empty() {
+                                dir.push('/');
+                            }
+                            dir.push_str(part);
+                            self.expanded_folders.insert(dir.clone());
+                        }
+                        self.invalidate_visible_file_items_cache();
+                    }
+                    self.renamed_file = (result.file_path != file_path).then(|| RenamedFile {
+                        origin: file_path.clone(),
+                        current: result.file_path.clone(),
+                    });
+                }
+                // Set the file first so the commit's modified-file selection and change
+                // markers are worked out for the path the file has at that commit.
                 self.active_file = Some(result.file_path);
+                self.update_state_for_commit_hash(result.commit_hash);
                 self.load_currently_selected_file();
                 self.status_message = status_msg;
             }

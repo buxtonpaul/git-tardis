@@ -222,8 +222,22 @@ impl<'a> TimelineNavigator<'a> {
         };
 
         // 4. Load file contents at target commit (fallback to first modified file if file didn't exist in Commit scope)
-        let mut target_file_path = req.file_path.to_string();
-        let content = match repo.get_file_at_commit(&target_commit.hash, req.file_path) {
+        // History that follows renames records the path the file had at each commit; use it
+        // so a jump across a rename opens the file under its old name.
+        let mut target_file_path = target_commit
+            .path
+            .clone()
+            .unwrap_or_else(|| req.file_path.to_string());
+        let read_result = repo
+            .get_file_at_commit(&target_commit.hash, &target_file_path)
+            .or_else(|e| {
+                if target_file_path == req.file_path {
+                    return Err(e);
+                }
+                target_file_path = req.file_path.to_string();
+                repo.get_file_at_commit(&target_commit.hash, req.file_path)
+            });
+        let content = match read_result {
             Ok(content) => content,
             Err(e) => {
                 if req.scope == JumpScope::Commit {
