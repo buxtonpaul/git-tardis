@@ -197,7 +197,7 @@ pub struct AppState {
 
     file_tree_cache: std::cell::RefCell<Option<Vec<crate::app::file_tree::FileTreeNode>>>,
     visible_file_items_cache:
-        std::cell::RefCell<Option<Vec<crate::app::file_tree::VisibleFileItem>>>,
+        std::cell::RefCell<Option<std::sync::Arc<Vec<crate::app::file_tree::VisibleFileItem>>>>,
     modified_status_cache: std::cell::RefCell<Option<ModifiedStatusCache>>,
     highlight_cache: Option<HighlightCache>,
     /// Commit whose tree listing has not been loaded into `files` yet.
@@ -342,7 +342,9 @@ impl AppState {
         *self.modified_status_cache.borrow_mut() = None;
     }
 
-    pub fn visible_file_items(&self) -> Vec<VisibleFileItem> {
+    /// The explorer rows currently visible (folders and files, respecting folding). The
+    /// list is shared rather than copied, so calling this is cheap however long it is.
+    pub fn visible_file_items(&self) -> std::sync::Arc<Vec<VisibleFileItem>> {
         if self.visible_file_items_cache.borrow().is_none() {
             if self.file_tree_cache.borrow().is_none() {
                 let tree = build_file_tree(&self.files);
@@ -350,7 +352,7 @@ impl AppState {
             }
             if let Some(tree) = self.file_tree_cache.borrow().as_ref() {
                 let visible = flatten_file_tree(tree, &self.expanded_folders);
-                *self.visible_file_items_cache.borrow_mut() = Some(visible);
+                *self.visible_file_items_cache.borrow_mut() = Some(std::sync::Arc::new(visible));
             }
         }
         self.visible_file_items_cache
@@ -625,19 +627,13 @@ impl AppState {
                     }
                 }
                 SidebarView::CommitTimeline => {
-                    let display_list = if self.timeline_filter == TimelineFilter::All {
-                        self.display_commits()
+                    let next_item = if self.timeline_filter == TimelineFilter::All {
+                        self.display_commit_at(self.commit_selected + 1)
                     } else {
-                        self.display_candidate_commits()
-                    };
-                    let cur_sel = if self.timeline_filter == TimelineFilter::All {
-                        self.commit_selected
-                    } else {
-                        self.candidate_selected
+                        self.display_candidate_at(self.candidate_selected + 1)
                     };
 
-                    if !display_list.is_empty() && cur_sel + 1 < display_list.len() {
-                        let next_item = &display_list[cur_sel + 1];
+                    if let Some(next_item) = next_item {
                         if next_item.is_dirty() {
                             self.reset_time_travel();
                         } else {
@@ -683,19 +679,22 @@ impl AppState {
                     }
                 }
                 SidebarView::CommitTimeline => {
-                    let display_list = if self.timeline_filter == TimelineFilter::All {
-                        self.display_commits()
+                    let (cur_sel, row_count) = if self.timeline_filter == TimelineFilter::All {
+                        (self.commit_selected, self.display_commit_count())
                     } else {
-                        self.display_candidate_commits()
+                        (self.candidate_selected, self.display_candidate_count())
                     };
-                    let cur_sel = if self.timeline_filter == TimelineFilter::All {
-                        self.commit_selected
+                    let prev_item = if cur_sel > 0 && cur_sel < row_count {
+                        if self.timeline_filter == TimelineFilter::All {
+                            self.display_commit_at(cur_sel - 1)
+                        } else {
+                            self.display_candidate_at(cur_sel - 1)
+                        }
                     } else {
-                        self.candidate_selected
+                        None
                     };
 
-                    if cur_sel > 0 && cur_sel < display_list.len() {
-                        let prev_item = &display_list[cur_sel - 1];
+                    if let Some(prev_item) = prev_item {
                         if prev_item.is_dirty() {
                             self.reset_time_travel();
                         } else {
@@ -823,18 +822,10 @@ impl AppState {
                 };
                 if same_file_and_mode {
                     if let Some(hash) = &self.selected_commit_hash {
-                        if let Some(idx) = self
-                            .display_candidate_commits()
-                            .iter()
-                            .position(|c| c.matches_hash(hash))
-                        {
+                        if let Some(idx) = self.display_candidate_position(hash) {
                             self.candidate_selected = idx;
                         }
-                        if let Some(idx) = self
-                            .display_commits()
-                            .iter()
-                            .position(|c| c.matches_hash(hash))
-                        {
+                        if let Some(idx) = self.display_commit_position(hash) {
                             self.commit_selected = idx;
                         }
                     }
@@ -1052,13 +1043,82 @@ impl AppState {
         list
     }
 
-    pub fn update_modified_files_for_selected_commit(&mut self) {
-        let display_c = self.display_commits();
-        if display_c.is_empty() || self.commit_selected >= display_c.len() {
-            return;
-        }
+    fn dirty_row_count(&self) -> usize {
+        usize::from(!self.dirty_files.is_empty())
+    }
 
-        let selected_item = &display_c[self.commit_selected];
+    fn display_row_at(&self, list: &[CommitSummary], index: usize) -> Option<CommitSummary> {
+        let dirty_rows = self.dirty_row_count();
+        if index < dirty_rows {
+            Some(CommitSummary::dirty())
+        } else {
+            list.get(index - dirty_rows).cloned()
+        }
+    }
+
+    fn display_row_position(&self, list: &[CommitSummary], hash: &str) -> Option<usize> {
+        let dirty_rows = self.dirty_row_count();
+        if dirty_rows > 0 && CommitSummary::dirty().matches_hash(hash) {
+            return Some(0);
+        }
+        list.iter()
+            .position(|c| c.matches_hash(hash))
+            .map(|i| i + dirty_rows)
+    }
+
+    /// Number of rows `display_commits` would return, without building the list.
+    pub fn display_commit_count(&self) -> usize {
+        self.dirty_row_count() + self.commits.len()
+    }
+
+    /// The row `display_commits()[index]`, without building the list.
+    pub fn display_commit_at(&self, index: usize) -> Option<CommitSummary> {
+        self.display_row_at(&self.commits, index)
+    }
+
+    /// Index in `display_commits` of the row matching `hash`.
+    pub fn display_commit_position(&self, hash: &str) -> Option<usize> {
+        self.display_row_position(&self.commits, hash)
+    }
+
+    /// Number of rows `display_candidate_commits` would return, without building the list.
+    pub fn display_candidate_count(&self) -> usize {
+        self.dirty_row_count() + self.candidate_commits.len()
+    }
+
+    /// The row `display_candidate_commits()[index]`, without building the list.
+    pub fn display_candidate_at(&self, index: usize) -> Option<CommitSummary> {
+        self.display_row_at(&self.candidate_commits, index)
+    }
+
+    /// Index in `display_candidate_commits` of the row matching `hash`.
+    pub fn display_candidate_position(&self, hash: &str) -> Option<usize> {
+        self.display_row_position(&self.candidate_commits, hash)
+    }
+
+    /// True when `candidate_commits` holds the whole history for the current file and
+    /// navigation mode, so a commit missing from it cannot be found by asking for more.
+    fn candidates_complete_for_current_query(&self) -> bool {
+        if self.candidate_commits.len() >= worker::CANDIDATE_COMMIT_LIMIT {
+            return false;
+        }
+        let file = self.history_file_path();
+        match (&self.last_candidate_query_key, self.nav_mode) {
+            (Some(CandidateQueryKey::Commit { .. }), NavigationMode::Commit) => true,
+            (Some(CandidateQueryKey::File { file_path, .. }), NavigationMode::File)
+            | (
+                Some(CandidateQueryKey::LineRange { file_path, .. }),
+                NavigationMode::Function | NavigationMode::Line,
+            ) => file.as_ref() == Some(file_path),
+            _ => false,
+        }
+    }
+
+    pub fn update_modified_files_for_selected_commit(&mut self) {
+        let selected_item = match self.display_commit_at(self.commit_selected) {
+            Some(item) => item,
+            None => return,
+        };
         if selected_item.is_dirty() {
             self.reset_time_travel();
         } else {
@@ -1077,8 +1137,7 @@ impl AppState {
         self.selected_commit_hash = Some(hash.clone());
         self.invalidate_modified_status_cache();
 
-        let mut display_c = self.display_commits();
-        if !display_c.iter().any(|c| c.matches_hash(&hash)) {
+        if self.display_commit_position(&hash).is_none() {
             if let Some(repo) = self.repo() {
                 if let Ok(more_commits) = repo.get_commit_history(Some(1000)) {
                     let has_target = more_commits.iter().any(|c| c.matches_hash(&hash));
@@ -1089,15 +1148,17 @@ impl AppState {
                     }
                 }
             }
-            display_c = self.display_commits();
         }
 
-        if let Some(idx) = display_c.iter().position(|c| c.matches_hash(&hash)) {
+        if let Some(idx) = self.display_commit_position(&hash) {
             self.commit_selected = idx;
         }
 
-        let mut display_cands = self.display_candidate_commits();
-        if !display_cands.iter().any(|c| c.matches_hash(&hash)) {
+        // A longer candidate history is only worth fetching when the current one may have
+        // been cut short; a complete list that lacks this commit will always lack it.
+        if self.display_candidate_position(&hash).is_none()
+            && !self.candidates_complete_for_current_query()
+        {
             if let Some(repo) = self.repo() {
                 if let Some(file_path) = self.history_file_path() {
                     let limit = Some(1000);
@@ -1115,10 +1176,9 @@ impl AppState {
                     }
                 }
             }
-            display_cands = self.display_candidate_commits();
         }
 
-        if let Some(idx) = display_cands.iter().position(|c| c.matches_hash(&hash)) {
+        if let Some(idx) = self.display_candidate_position(&hash) {
             self.candidate_selected = idx;
         }
 
@@ -1296,20 +1356,15 @@ impl AppState {
     pub fn trigger_edit_here(&mut self) -> crate::rebase::RebaseResult {
         let target_hash = match if self.sidebar_view == SidebarView::CommitTimeline {
             if self.timeline_filter == TimelineFilter::All {
-                self.display_commits()
-                    .get(self.commit_selected)
-                    .map(|c| c.hash.clone())
+                self.display_commit_at(self.commit_selected).map(|c| c.hash)
             } else {
-                self.display_candidate_commits()
-                    .get(self.candidate_selected)
-                    .map(|c| c.hash.clone())
+                self.display_candidate_at(self.candidate_selected)
+                    .map(|c| c.hash)
             }
         } else {
-            self.selected_commit_hash.clone().or_else(|| {
-                self.display_commits()
-                    .get(self.commit_selected)
-                    .map(|c| c.hash.clone())
-            })
+            self.selected_commit_hash
+                .clone()
+                .or_else(|| self.display_commit_at(self.commit_selected).map(|c| c.hash))
         } {
             Some(h) => h,
             None => {
@@ -2252,11 +2307,9 @@ impl AppState {
                 }
                 SidebarView::CommitTimeline => {
                     let selected_commit = if self.timeline_filter == TimelineFilter::All {
-                        self.display_commits().get(self.commit_selected).cloned()
+                        self.display_commit_at(self.commit_selected)
                     } else {
-                        self.display_candidate_commits()
-                            .get(self.candidate_selected)
-                            .cloned()
+                        self.display_candidate_at(self.candidate_selected)
                     };
 
                     if let Some(commit) = selected_commit {

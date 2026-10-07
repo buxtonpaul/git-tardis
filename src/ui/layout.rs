@@ -156,9 +156,13 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             } else {
                 state.file_selected.min(visible_items.len() - 1)
             };
+            let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
+            let window = list_window(visible_items.len(), sel_index, height);
             let items: Vec<ListItem> = visible_items
                 .iter()
                 .enumerate()
+                .skip(window.start)
+                .take(window.len())
                 .map(|(i, item)| {
                     let indent = "  ".repeat(item.depth);
                     let prefix = if item.is_dir {
@@ -270,12 +274,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 .collect();
             let list = List::new(items).block(sidebar_block);
             let mut list_state = ListState::default();
-            let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
             if !visible_items.is_empty() {
-                list_state.select(Some(sel_index));
-                if height > 0 {
-                    *list_state.offset_mut() = sel_index.saturating_sub(height / 2);
-                }
+                list_state.select(Some(sel_index - window.start));
             }
             frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
         }
@@ -291,9 +291,13 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 sel_index.min(list_items.len() - 1)
             };
 
+            let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
+            let window = list_window(list_items.len(), safe_sel, height);
             let items: Vec<ListItem> = list_items
                 .iter()
                 .enumerate()
+                .skip(window.start)
+                .take(window.len())
                 .map(|(i, f)| {
                     let style = if i == safe_sel && is_sidebar_active {
                         Style::default().bg(Color::Blue).fg(Color::White)
@@ -307,28 +311,21 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 .collect();
             let list = List::new(items).block(sidebar_block);
             let mut list_state = ListState::default();
-            let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
             if !list_items.is_empty() {
-                list_state.select(Some(safe_sel));
-                if height > 0 {
-                    *list_state.offset_mut() = safe_sel.saturating_sub(height / 2);
-                }
+                list_state.select(Some(safe_sel - window.start));
             }
             frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
         }
         SidebarView::CommitTimeline => {
             let height = main_chunks[0].height.saturating_sub(PANE_CHROME_HEIGHT) as usize;
             if state.timeline_filter == crate::app::TimelineFilter::All {
-                let items_list = state.display_commits();
-                let safe_sel = if items_list.is_empty() {
-                    0
-                } else {
-                    state.commit_selected.min(items_list.len() - 1)
-                };
+                let row_count = state.display_commit_count();
+                let safe_sel = state.commit_selected.min(row_count.saturating_sub(1));
+                let window = list_window(row_count, safe_sel, height);
 
-                let items: Vec<ListItem> = items_list
-                    .iter()
-                    .enumerate()
+                let items: Vec<ListItem> = window
+                    .clone()
+                    .filter_map(|i| state.display_commit_at(i).map(|commit| (i, commit)))
                     .map(|(i, commit)| {
                         let is_candidate = if commit.is_dirty() {
                             true
@@ -383,24 +380,18 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     .collect();
                 let list = List::new(items).block(sidebar_block);
                 let mut list_state = ListState::default();
-                if !items_list.is_empty() {
-                    list_state.select(Some(safe_sel));
-                    if height > 0 {
-                        *list_state.offset_mut() = safe_sel.saturating_sub(height / 2);
-                    }
+                if row_count > 0 {
+                    list_state.select(Some(safe_sel - window.start));
                 }
                 frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
             } else {
-                let items_list = state.display_candidate_commits();
-                let safe_sel = if items_list.is_empty() {
-                    0
-                } else {
-                    state.candidate_selected.min(items_list.len() - 1)
-                };
+                let row_count = state.display_candidate_count();
+                let safe_sel = state.candidate_selected.min(row_count.saturating_sub(1));
+                let window = list_window(row_count, safe_sel, height);
 
-                let items: Vec<ListItem> = items_list
-                    .iter()
-                    .enumerate()
+                let items: Vec<ListItem> = window
+                    .clone()
+                    .filter_map(|i| state.display_candidate_at(i).map(|commit| (i, commit)))
                     .map(|(i, commit)| {
                         let display_hash = if commit.is_dirty() {
                             "*DIRTY*".to_string()
@@ -437,11 +428,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                     .collect();
                 let list = List::new(items).block(sidebar_block);
                 let mut list_state = ListState::default();
-                if !items_list.is_empty() {
-                    list_state.select(Some(safe_sel));
-                    if height > 0 {
-                        *list_state.offset_mut() = safe_sel.saturating_sub(height / 2);
-                    }
+                if row_count > 0 {
+                    list_state.select(Some(safe_sel - window.start));
                 }
                 frame.render_stateful_widget(list, main_chunks[0], &mut list_state);
             }
@@ -852,6 +840,21 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
     }
 }
 
+/// Rows of a list worth building for a viewport `height` rows tall: the slice shown when
+/// the list is scrolled to keep `selected` in the middle. Only these rows become widgets,
+/// so drawing cost does not grow with the length of the list.
+fn list_window(len: usize, selected: usize, height: usize) -> std::ops::Range<usize> {
+    if len == 0 {
+        return 0..0;
+    }
+    let start = if height > 0 {
+        selected.saturating_sub(height / 2)
+    } else {
+        0
+    };
+    start..len.min(start + height.max(1))
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -903,6 +906,22 @@ mod tests {
         assert!(content.contains("src/"));
         assert!(content.contains("main.rs"));
         assert!(content.contains("fn main() {}"));
+    }
+
+    #[test]
+    fn test_list_window_follows_selection() {
+        // Short list: everything fits.
+        assert_eq!(list_window(5, 2, 20), 0..5);
+        // Near the top the window starts at the first row.
+        assert_eq!(list_window(1000, 3, 20), 0..20);
+        // In the middle the selection sits half a viewport down.
+        assert_eq!(list_window(1000, 500, 20), 490..510);
+        // At the end the window is clipped to the list.
+        assert_eq!(list_window(1000, 999, 20), 989..1000);
+        // Degenerate sizes still contain the selection.
+        assert_eq!(list_window(1000, 7, 0), 0..1);
+        assert_eq!(list_window(1000, 7, 1), 7..8);
+        assert_eq!(list_window(0, 0, 20), 0..0);
     }
 
     #[test]
