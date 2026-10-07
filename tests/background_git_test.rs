@@ -194,13 +194,21 @@ fn test_jump_right_after_moving_uses_the_new_line() {
     // newest change to line 3, so the previous version of that line is Commit 1.
     app.move_selection_down();
     app.move_selection_down();
-    let moved_at = Instant::now();
     app.dispatch_action(Action::JumpPrevLine);
+
+    // The history for line 3 is not in yet, so the jump waits for the worker rather than
+    // running the query on the calling thread.
+    assert!(app.has_pending_jump());
+    assert_eq!(app.selected_commit_hash, None);
+    assert_eq!(candidate_messages(&app), ["Commit 1"]);
     assert!(
-        moved_at.elapsed() < Duration::from_secs(5),
-        "jump should not wait on the worker"
+        app.status_message.contains("Finding previous change"),
+        "{}",
+        app.status_message
     );
 
+    wait_for(&mut app, "the jump", |a| a.selected_commit_hash.is_some());
+    assert!(!app.has_pending_jump());
     assert_eq!(candidate_messages(&app), ["Commit 3", "Commit 1"]);
     assert_eq!(app.code_lines, vec!["one", "two", "three"]);
     assert!(
@@ -208,6 +216,77 @@ fn test_jump_right_after_moving_uses_the_new_line() {
         "{}",
         app.status_message
     );
+}
+
+#[test]
+fn test_another_key_cancels_a_waiting_jump() {
+    let dir = setup_repo();
+    let mut app = background_app(&dir);
+    app.sidebar_view = SidebarView::CommitTimeline;
+    app.set_navigation_mode(NavigationMode::Line);
+    wait_for(&mut app, "line 1 candidates", |a| {
+        candidate_messages(a) == ["Commit 1"]
+    });
+
+    app.move_selection_down();
+    app.dispatch_action(Action::JumpPrevLine);
+    assert!(app.has_pending_jump());
+
+    // Moving on before the history arrives abandons the jump.
+    app.dispatch_action(Action::MoveDown);
+    assert!(!app.has_pending_jump());
+
+    wait_for(&mut app, "pending work to finish", |a| {
+        !a.has_pending_background()
+    });
+    assert_eq!(
+        app.selected_commit_hash, None,
+        "no jump should have happened"
+    );
+    assert_eq!(app.cursor_line, 3);
+    assert_eq!(candidate_messages(&app), ["Commit 3", "Commit 1"]);
+}
+
+#[test]
+fn test_commit_jump_does_not_wait_for_candidates() {
+    let dir = setup_repo();
+    let mut app = background_app(&dir);
+    app.sidebar_view = SidebarView::CommitTimeline;
+    app.set_navigation_mode(NavigationMode::Line);
+    wait_for(&mut app, "line 1 candidates", |a| {
+        candidate_messages(a) == ["Commit 1"]
+    });
+
+    // A line query is now waiting, but a commit jump reads the commit list instead.
+    app.move_selection_down();
+    assert!(app.has_pending_background());
+    app.dispatch_action(Action::JumpPrevCommit);
+
+    assert!(!app.has_pending_jump());
+    assert!(app.selected_commit_hash.is_some());
+    assert!(
+        app.status_message.contains("Commit 2"),
+        "{}",
+        app.status_message
+    );
+}
+
+#[test]
+fn test_jump_with_history_already_loaded_is_immediate() {
+    let dir = setup_repo();
+    let mut app = background_app(&dir);
+    app.sidebar_view = SidebarView::CommitTimeline;
+    app.set_navigation_mode(NavigationMode::Line);
+    app.move_selection_down();
+    app.move_selection_down();
+    wait_for(&mut app, "line 3 candidates", |a| {
+        candidate_messages(a) == ["Commit 3", "Commit 1"]
+    });
+
+    app.dispatch_action(Action::JumpPrevLine);
+
+    assert!(!app.has_pending_jump());
+    assert_eq!(app.code_lines, vec!["one", "two", "three"]);
 }
 
 #[test]

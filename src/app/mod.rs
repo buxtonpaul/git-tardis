@@ -214,6 +214,8 @@ pub struct AppState {
     background_epoch: u64,
     requested_blame: Option<BlameKey>,
     pending_candidates: Option<PendingCandidates>,
+    /// A jump waiting for its candidate history to arrive from the worker.
+    pending_jump: Option<(crate::timeline::JumpScope, crate::timeline::JumpDirection)>,
     pub highlight_parse_count: usize,
     pub candidate_commits_cache: std::collections::HashMap<CandidateQueryKey, Vec<CommitSummary>>,
     pub last_candidate_query_key: Option<CandidateQueryKey>,
@@ -319,6 +321,7 @@ impl AppState {
             background_epoch: 0,
             requested_blame: None,
             pending_candidates: None,
+            pending_jump: None,
             highlight_parse_count: 0,
             candidate_commits_cache: std::collections::HashMap::new(),
             last_candidate_query_key: None,
@@ -903,6 +906,11 @@ impl AppState {
     }
 
     /// True while a background query is waiting to be sent or has not returned yet.
+    /// True while a jump is waiting for candidate history from the worker.
+    pub fn has_pending_jump(&self) -> bool {
+        self.pending_jump.is_some()
+    }
+
     pub fn has_pending_background(&self) -> bool {
         self.pending_candidates.is_some() || self.requested_blame.is_some()
     }
@@ -934,6 +942,26 @@ impl AppState {
         self.background_epoch += 1;
         self.requested_blame = None;
         self.pending_candidates = None;
+        self.pending_jump = None;
+    }
+
+    /// Send the waiting candidate query to the worker. With `force`, skip what is left of
+    /// the debounce delay.
+    fn dispatch_pending_candidates(&mut self, force: bool) {
+        let due = self
+            .pending_candidates
+            .as_ref()
+            .filter(|p| !p.dispatched && (force || p.requested_at.elapsed() >= CANDIDATE_DEBOUNCE))
+            .map(|p| p.key.clone());
+        if let Some(key) = due {
+            let epoch = self.background_epoch;
+            if let Some(worker) = self.git_worker() {
+                worker.submit(GitJob::Candidates { epoch, key });
+            }
+            if let Some(pending) = self.pending_candidates.as_mut() {
+                pending.dispatched = true;
+            }
+        }
     }
 
     /// Pick up `git --version` once its lookup has finished. Returns true when
@@ -963,20 +991,7 @@ impl AppState {
             return version_arrived;
         }
 
-        let due = self
-            .pending_candidates
-            .as_ref()
-            .filter(|p| !p.dispatched && p.requested_at.elapsed() >= CANDIDATE_DEBOUNCE)
-            .map(|p| p.key.clone());
-        if let Some(key) = due {
-            let epoch = self.background_epoch;
-            if let Some(worker) = self.git_worker() {
-                worker.submit(GitJob::Candidates { epoch, key });
-            }
-            if let Some(pending) = self.pending_candidates.as_mut() {
-                pending.dispatched = true;
-            }
-        }
+        self.dispatch_pending_candidates(false);
 
         let mut changed = version_arrived;
         while let Some(result) = self.git_worker.as_ref().and_then(|w| w.try_recv()) {
@@ -1016,6 +1031,14 @@ impl AppState {
                             .insert(key.clone(), commits.clone());
                         if is_wanted {
                             self.apply_candidate_commits(key, commits);
+                            changed = true;
+                        }
+                    }
+                    if is_wanted {
+                        if let Some((scope, direction)) = self.pending_jump.take() {
+                            // The history this jump was waiting for is in (or could not be
+                            // fetched, in which case the jump reports that itself).
+                            self.perform_timeline_jump(scope, direction);
                             changed = true;
                         }
                     }
@@ -1828,9 +1851,37 @@ impl AppState {
                 .unwrap_or_else(|| displayed_path.clone())
         };
 
-        // A jump must use the candidates for the current cursor position, so resolve any
-        // query that is still waiting on the worker before reading them.
-        if self.pending_candidates.is_some() {
+        // A jump that reads the candidate list must see the one for the current cursor
+        // position. If that query is still with the worker, the jump waits for it there
+        // rather than repeating it on this thread; `poll_background` then performs it.
+        let reads_candidates = matches!(
+            (scope, self.nav_mode),
+            (crate::timeline::JumpScope::File, NavigationMode::File)
+                | (
+                    crate::timeline::JumpScope::Function,
+                    NavigationMode::Function
+                )
+                | (crate::timeline::JumpScope::Line, NavigationMode::Line)
+        );
+        if reads_candidates {
+            // Cursor moves only refresh the list while the timeline is showing, so it may
+            // still describe an earlier position.
+            self.update_candidate_commits();
+        }
+        if reads_candidates && self.pending_candidates.is_some() {
+            if self.background_git {
+                self.dispatch_pending_candidates(true);
+                self.pending_jump = Some((scope, direction));
+                self.status_message = format!(
+                    "Finding {} change in {:?} history...",
+                    match direction {
+                        crate::timeline::JumpDirection::Previous => "previous",
+                        crate::timeline::JumpDirection::Next => "next",
+                    },
+                    scope
+                );
+                return;
+            }
             self.update_candidate_commits_now();
         }
 
@@ -2200,6 +2251,9 @@ impl AppState {
     }
 
     pub fn dispatch_action(&mut self, action: Action) {
+        // Any new key press supersedes a jump that is still waiting for its history.
+        self.pending_jump = None;
+
         match action {
             Action::Quit => {
                 if self.show_help {
