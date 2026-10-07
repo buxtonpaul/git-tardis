@@ -171,13 +171,14 @@ pub fn find_git_tardis_binary() -> Result<PathBuf, String> {
         return Ok(current);
     }
 
+    let binary_name = format!("git-tardis{}", env::consts::EXE_SUFFIX);
     if let Some(parent) = current.parent() {
-        let target_bin = parent.join("git-tardis");
+        let target_bin = parent.join(&binary_name);
         if target_bin.exists() {
             return Ok(target_bin);
         }
         if let Some(grandparent) = parent.parent() {
-            let target_bin = grandparent.join("git-tardis");
+            let target_bin = grandparent.join(&binary_name);
             if target_bin.exists() {
                 return Ok(target_bin);
             }
@@ -185,6 +186,33 @@ pub fn find_git_tardis_binary() -> Result<PathBuf, String> {
     }
 
     Ok(current)
+}
+
+/// The command git runs as `GIT_SEQUENCE_EDITOR`. Git passes it to a POSIX shell, including
+/// on Windows, where backslashes in the path would be read as escapes; forward slashes are
+/// accepted there too.
+fn sequence_editor_command(exe_path: &str, target_hash: &str) -> String {
+    let exe_path = if cfg!(windows) {
+        exe_path.replace('\\', "/")
+    } else {
+        exe_path.to_string()
+    };
+    format!("\"{}\" --mark-edit {}", exe_path, target_hash)
+}
+
+/// The shell to drop the user into while a rebase is paused: `$SHELL` where that is set,
+/// otherwise the platform's command interpreter.
+fn interactive_shell() -> String {
+    if let Ok(shell) = env::var("SHELL") {
+        if !shell.is_empty() {
+            return shell;
+        }
+    }
+    if cfg!(windows) {
+        env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+    } else {
+        "/bin/sh".to_string()
+    }
 }
 
 /// Execute interactive "Edit Here" rebase targeting a specific commit
@@ -214,7 +242,7 @@ pub fn execute_edit_here<R: BufRead>(
         Err(e) => return RebaseResult::Error(e),
     };
 
-    let sequence_editor_cmd = format!("\"{}\" --mark-edit {}", exe_str, target_hash);
+    let sequence_editor_cmd = sequence_editor_command(exe_str, target_hash);
 
     // Suspend TUI mode
     let mut stdout = io::stdout();
@@ -267,7 +295,11 @@ pub fn execute_edit_here<R: BufRead>(
         println!("You are now in an interactive shell.");
         println!("  - Edit files and use 'git commit --amend' to update this commit");
         println!("  - Run 'git rebase --continue' when finished");
-        println!("  - Or exit this subshell ('exit' or Ctrl-D) to resume");
+        if cfg!(windows) {
+            println!("  - Or exit this subshell ('exit') to resume");
+        } else {
+            println!("  - Or exit this subshell ('exit' or Ctrl-D) to resume");
+        }
         println!(
             "================================================================================\n"
         );
@@ -278,8 +310,9 @@ pub fn execute_edit_here<R: BufRead>(
                 .args(["-c", &cmd])
                 .status();
         } else if env::var("GIT_TARDIS_NON_INTERACTIVE").is_err() {
-            let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-            let _ = Command::new(&shell).current_dir(repo_path).status();
+            let _ = Command::new(interactive_shell())
+                .current_dir(repo_path)
+                .status();
         }
 
         // After subshell exits, check if rebase is still in progress

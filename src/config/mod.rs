@@ -97,14 +97,27 @@ impl Config {
         Self::from_toml(&content)
     }
 
+    /// Where the configuration file is looked for when none is given on the command line:
+    /// `~/.config/git-tardis/config.toml`, or on Windows without `HOME` set (cmd and
+    /// PowerShell), `%APPDATA%\git-tardis\config.toml`.
     pub fn default_config_path() -> Option<PathBuf> {
-        let home = std::env::var_os("HOME")?;
-        Some(
-            PathBuf::from(home)
-                .join(".config")
-                .join("git-tardis")
-                .join("config.toml"),
-        )
+        if let Some(home) = std::env::var_os("HOME") {
+            return Some(
+                PathBuf::from(home)
+                    .join(".config")
+                    .join("git-tardis")
+                    .join("config.toml"),
+            );
+        }
+        if cfg!(windows) {
+            let appdata = std::env::var_os("APPDATA")?;
+            return Some(
+                PathBuf::from(appdata)
+                    .join("git-tardis")
+                    .join("config.toml"),
+            );
+        }
+        None
     }
 
     pub fn load_or_default(custom_path: Option<&Path>) -> Self {

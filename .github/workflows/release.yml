@@ -29,6 +29,9 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             archive_name: git-tardis-aarch64-apple-darwin.tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive_name: git-tardis-x86_64-pc-windows-msvc.zip
 
     steps:
       - name: Checkout repository
@@ -46,12 +49,24 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package Release Archive
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
           tar -czf ../../../${{ matrix.archive_name }} git-tardis
           cd ../../..
           shasum -a 256 ${{ matrix.archive_name }} > ${{ matrix.archive_name }}.sha256
+
+      - name: Package Release Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir package
+          cp target/${{ matrix.target }}/release/git-tardis.exe LICENSE readme.md package/
+          cd package
+          7z a -tzip ../${{ matrix.archive_name }} git-tardis.exe LICENSE readme.md
+          cd ..
+          sha256sum ${{ matrix.archive_name }} > ${{ matrix.archive_name }}.sha256
 
       - name: Upload Release Artifacts
         uses: actions/upload-artifact@v4

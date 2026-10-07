@@ -2649,6 +2649,12 @@ impl AppState {
                 .trim_start_matches("./")
                 .to_string()
         };
+        // Git names paths with forward slashes on every platform.
+        let clean_path = if cfg!(windows) {
+            clean_path.replace('\\', "/")
+        } else {
+            clean_path
+        };
 
         // Automatically expand parent folders of target file so it is visible in the file tree
         let parts: Vec<&str> = clean_path.split('/').collect();
