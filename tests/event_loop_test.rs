@@ -68,6 +68,8 @@ fn idle(n: usize) -> Vec<Step> {
 fn test_app() -> AppState {
     let mut app = AppState::new(PathBuf::from("."));
     app.files = (0..10).map(|i| format!("missing_file_{}.txt", i)).collect();
+    // Pin the version so its background lookup cannot add a redraw part-way through a test.
+    app.git_version = Some("git version 0.0.0-test".to_string());
     app
 }
 

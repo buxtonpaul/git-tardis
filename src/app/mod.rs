@@ -964,7 +964,10 @@ impl AppState {
     /// Send due background queries and apply finished ones. Returns true when visible state
     /// changed and the screen should be redrawn.
     pub fn poll_background(&mut self) -> bool {
-        let version_arrived = self.poll_git_version();
+        // The version is only displayed on the splash screen, so it is only worth a redraw
+        // while that is showing.
+        let splash_visible = self.show_splashscreen || self.code_lines.is_empty();
+        let version_arrived = self.poll_git_version() && splash_visible;
         if !self.background_git {
             return version_arrived;
         }
